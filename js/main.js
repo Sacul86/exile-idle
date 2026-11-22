@@ -9,6 +9,7 @@ import {
   nodeLines, refundCost, resetCost, allocatedSet,
 } from './tree.js';
 import { SKILLS, SKILL_BY_ID, skillSlots, skillUpgradeCost, MAX_SKILL_RANK, MILESTONES, skillMods, skillEffective, skillDescFull, respecModCost } from './skills.js';
+import { Arena } from './fx.js';
 import { renderTreeSvg, zoom, centerOn, getSelected, setSelected, resetView } from './treeview.js';
 import {
   newState, load, save, tick, ensureCombat, refreshStats, simulate, salvage, equipFromBag, unequip, BAG_SIZE, SAVE_KEY,
@@ -16,6 +17,7 @@ import {
 } from './game.js';
 
 let state = load() || newState();
+const arena = new Arena();
 ensureCombat(state);
 let tab = 'battle';
 let bagFilter = -1;
@@ -95,13 +97,11 @@ function renderBattle() {
     </div>
     <div class="arena" id="arena">
       <div class="fighter p" id="fp">
-        <div class="sprite" id="p-sprite">${(CLASS_BY_ID[state.cls] || {}).icon || '🧙'}</div>
-        <div class="bar hp"><div class="fill" id="p-hp"></div><span id="p-hp-t"></span></div>
+        <div class="bar hp"><div class="trail" id="p-trail"></div><div class="fill" id="p-hp"></div><span id="p-hp-t"></span></div>
         <div class="label">${(CLASS_BY_ID[state.cls] || {}).name || 'Exile'} · Lv ${state.level} <span id="p-shield" class="shield"></span></div>
       </div>
       <div class="fighter m" id="fm">
-        <div class="sprite" id="m-sprite"></div>
-        <div class="bar mhp"><div class="fill" id="m-hp"></div><span id="m-hp-t"></span></div>
+        <div class="bar mhp"><div class="trail" id="m-trail"></div><div class="fill" id="m-hp"></div><span id="m-hp-t"></span></div>
         <div class="label" id="m-name"></div>
       </div>
     </div>
@@ -116,6 +116,7 @@ function renderBattle() {
       <h2>Loot</h2>
       <div class="feed" id="feed"></div>
     </div>`;
+  arena.mount($('#arena'));
   renderFeed();
   updateBattle();
 }
@@ -150,12 +151,10 @@ function updateBattle() {
   $('#p-shield').textContent = c.shield ? `🔶${fmt(c.shield.v)}` : '';
   $('#p-hp').style.width = Math.max(0, 100 * c.hp / st.maxLife) + '%';
   $('#p-hp-t').textContent = `${fmt(Math.max(0, c.hp))}`;
-  $('#fp').classList.toggle('dead', c.respawn > 0);
+  $('#p-trail').style.width = $('#p-hp').style.width;
   if (m !== lastMonster) {
     lastMonster = m;
-    const sp = $('#m-sprite');
-    sp.textContent = m.icon;
-    sp.classList.toggle('boss', m.boss);
+    $('#m-trail').style.transition = 'none'; $('#m-trail').style.width = '100%'; void $('#m-trail').offsetWidth; $('#m-trail').style.transition = '';
     $('#m-name').textContent = m.boss ? `👑 ${m.name}` : m.elite ? 'Elite' : 'Monster';
     $('#m-name').dataset.base = $('#m-name').textContent;
     $('#fm').classList.toggle('elite', m.elite);
@@ -166,32 +165,13 @@ function updateBattle() {
   const label = nm.dataset.base + (m.frozen > 0 ? ' ❄️' : '') + (enr > 1 ? ` 🔥x${enr.toFixed(1)}` : '');
   if (nm.textContent !== label) nm.textContent = label;
   $('#m-hp').style.width = Math.max(0, 100 * m.hp / m.maxHp) + '%';
+  $('#m-trail').style.width = $('#m-hp').style.width;
   $('#m-hp-t').textContent = fmt(Math.max(0, m.hp));
   $('#b-dps').textContent = fmt(st.dps); $('#b-life').textContent = fmt(st.maxLife); $('#b-ehp').textContent = fmt(st.ehp);
   const prev = document.querySelector('[data-act="stage-prev"]'), next = document.querySelector('[data-act="stage-next"]');
   if (prev) { prev.disabled = state.stage <= 1; next.disabled = state.stage >= state.maxStage; }
   $('#blocked').classList.toggle('hidden', !!run || !(state.pushBlocked && state.settings.autoAdvance));
 }
-let floatsThisFrame = 0;
-function floatText(text, cls, side) {
-  const a = $('#arena');
-  if (!a || floatsThisFrame > 3) return;
-  floatsThisFrame++;
-  const el = document.createElement('div');
-  el.className = 'float ' + cls;
-  el.textContent = text;
-  const x = side === 'm' ? 62 + Math.random() * 20 : 8 + Math.random() * 20;
-  el.style.left = x + '%';
-  el.style.top = (30 + Math.random() * 25) + '%';
-  a.appendChild(el);
-  setTimeout(() => el.remove(), 900);
-}
-function bump(id, cls) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls);
-}
-
 // ---------- Gear ----------
 function renderGear() {
   const st = state.combat.stats;
@@ -684,24 +664,17 @@ function frame(now) {
   const dt = Math.min(1, (now - last) / 1000);
   last = now;
   acc += dt * state.settings.speed;
-  floatsThisFrame = 0;
   while (acc >= STEP) { tick(state, STEP, ev); acc -= STEP; }
   let structural = false, battleFull = false;
   for (const e of ev) {
     switch (e.t) {
-      case 'hit':
-        if (e.who === 'm') { floatText(fmt(e.dmg), e.crit ? 'crit' : '', 'm'); bump('m-sprite', 'hitme'); bump('p-sprite', 'atk'); }
-        else { floatText('-' + fmt(e.dmg), 'ptaken', 'p'); bump('p-sprite', 'hitme'); }
-        break;
-      case 'evade': floatText('Evade', 'info', 'p'); break;
-      case 'slam': floatText('SLAM!', 'slam', 'm'); break;
-      case 'skill': { const sk = SKILL_BY_ID[e.id]; if (sk.kind !== 'hit') floatText(sk.icon + ' ' + sk.name, 'info', 'p'); else floatText(sk.icon, 'skillfx', 'm'); break; }
+      case 'hit': case 'evade': case 'slam': case 'skill': break;
       case 'skillUnlock': toast(`✴️ New skill: ${e.sk.icon} ${e.sk.name}`); break;
       case 'key': toast(`🗝️ Dungeon Key${e.first ? ' (first kill)' : ''}`); break;
       case 'phase': toast(`🔱 Phase ${e.phase}!`); break;
       case 'room': toast(e.room > DUNGEON.rooms ? '💀 The Warden awakens' : `🚪 Room ${e.room}`); break;
       case 'runEnd': structural = true; battleFull = true; showRunEnd(e); break;
-      case 'block': floatText('Block', 'info', 'p'); break;
+
       case 'level': toast(`⭐ Level ${e.level}! +1 passive point`); structural = true; battleFull = true; break;
       case 'stage': structural = true; battleFull = true; if (isBossStage(e.stage)) toast(`👑 Boss: ${zoneFor(e.stage).bossName}`); break;
       case 'death': toast('☠️ You died. Falling back a stage.'); structural = true; battleFull = true; break;
@@ -709,6 +682,11 @@ function frame(now) {
       case 'loot': if (e.item.rarity >= 3) toast(`<span class="${rc(e.item.rarity)}">${RARITIES[e.item.rarity].name}: ${e.item.name}</span>`); structural = true; break;
       case 'kill': if (tab === 'battle') renderFeed(); break;
     }
+  }
+  if (tab === 'battle' && !document.hidden) {
+    state._pIcon = (CLASS_BY_ID[state.cls] || {}).icon || '🧙';
+    for (const e of ev) { try { arena.onEvent(e, state); } catch (err) { console.warn(err); } }
+    arena.frame(dt, state);
   }
   ev.length = 0;
   if (structural) dirtyAt = now;
@@ -758,6 +736,7 @@ render();
 if (!state.cls) openClassPicker(false); else offlineCatchUp();
 if (state.treeReset) { delete state.treeReset; setTimeout(() => toast('🌳 The passive tree was redesigned. All points refunded!'), 800); }
 requestAnimationFrame(frame);
+window.addEventListener('resize', () => arena.resize());
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
