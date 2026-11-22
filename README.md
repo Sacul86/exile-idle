@@ -14,7 +14,12 @@ A mobile-first auto-battle loot RPG inspired by Path of Exile. Your Exile fights
 - **Gear levels:** upgrade items +1 at a time (max +5 Common up to +25 Mythic).
 - **Stats:** 19 prefix/suffix mods: flat/% physical and elemental damage, attack speed, crit, life, armour, evasion, resistances, regen, life on hit, leech, block, gold find, item rarity, XP.
 - **Crafting:** Upgrade, Reroll mods, Promote rarity (up to Legendary), Salvage, Lock.
-- **Passive skills:** 1 point per level across 13 nodes.
+- **6 classes:** Witch, Shadow, Ranger, Duelist, Marauder, Templar. Each has its own bonuses and starting spot on the tree.
+- **Passive tree:** ~150 nodes in a PoE-style ring, with notables and **8 keystones** that change the rules (Resolute Technique, Iron Reflexes, Acrobatics, Assassin's Mark, Elemental Overload, Divine Bulwark, Vaal Pact, Glass Cannon). Drag/pinch to navigate, tap to allocate a whole path, refund single nodes. Points are capped late game (1/level to 100, then 1 per 4 levels), so you have to commit to a build. There's an *Auto* button if you'd rather not plan.
+- **Active skills:** 10 skills (strikes, Fireball, War Cry, Blood Rite, Molten Shell, Blade Flurry, Frost Nova, Haste, Meteor, Undying Rage) that cast themselves on cooldown. Unlock by level, slot 2–4 in your bar, rank up to R20 with shards.
+- **Bosses:** zone bosses every 10 stages enrage after 30s and slam for heavy damage. They drop 🗝️ dungeon keys.
+- **Dungeons:** timed runs (5 rooms + a Warden boss, 150s). Rare+ loot, shards, and 🔱 raid sigils.
+- **Raids:** a 3-phase boss in 180s, with a guaranteed Legendary, Epic+ drops and a chance at Mythic.
 - **Death pushes you back** a stage and you farm until you get stronger (level, upgrade, or passive point) before pushing again.
 - **Offline progress:** up to 8 hours, fully simulated.
 - Installable PWA that works offline. Saves to the device, with export/import.
@@ -25,4 +30,4 @@ Any static server works:
 python3 -m http.server 8000
 ```
 ## Balance sim
-`node tools/sim.js 8` simulates 8 hours of play headlessly and prints progression.
+`node tools/sim.js 8 marauder` simulates 8 hours of a Marauder (auto tree, upgrades, skills, dungeons, raids) and prints progression.

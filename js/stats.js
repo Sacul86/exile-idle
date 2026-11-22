@@ -1,15 +1,16 @@
-import { S, PASSIVES, SLOTS, resistPenalty, physShare, isBossStage } from './data.js';
+import { S, SLOTS, resistPenalty, physShare, isBossStage } from './data.js';
+import { treeBonuses } from './tree.js';
 import { itemStats } from './items.js';
 
 export const RESIST_CAP = 75;
 // Monsters outscale gear slightly, so tiers/crafting/passives matter.
-export let MONSTER_EXP = +(globalThis.process?.env?.MEXP || 1.3);
+export let MONSTER_EXP = +(globalThis.process?.env?.MEXP || 1.4);
 
 // Monster template for a stage (used for both combat and gear scoring)
-export function monsterFor(stage, elite = false) {
-  const boss = isBossStage(stage);
+export function monsterFor(stage, elite = false, kind = null) {
+  const boss = kind ? kind !== 'normal' : isBossStage(stage);
   const s = Math.pow(S(stage), MONSTER_EXP);
-  let hp = 32 * s, dmg = 4.5 * s, interval = 1.3;
+  let hp = 60 * s, dmg = 4.5 * s, interval = 1.3;
   // Ease the first few stages so the opening feels snappy
   const ease = Math.min(1, 0.4 + stage * 0.06);
   hp *= ease; dmg *= ease;
@@ -17,6 +18,8 @@ export function monsterFor(stage, elite = false) {
   else if (elite) { hp *= 2.5; dmg *= 1.3; }
   return { hp, maxHp: hp, dmg, interval, boss, elite, acc: 40 * S(stage), physShare: physShare(stage) };
 }
+
+export const combatLevel = (state) => (state.run ? state.run.level : state.stage);
 
 export function computeStats(state, gear = state.gear) {
   const t = {};
@@ -26,45 +29,59 @@ export function computeStats(state, gear = state.gear) {
     if (!it) continue;
     for (const [k, v] of Object.entries(itemStats(it))) add(k, v);
   }
-  for (const p of PASSIVES) {
-    const r = state.passives[p.id] || 0;
-    if (r) add(p.stat, r * p.per);
-  }
+  const tb = treeBonuses(state);
+  for (const [k, v] of Object.entries(tb.stats)) add(k, v);
+  const ks = tb.keystones;
   const g = (k) => t[k] || 0;
   const hasWeapon = !!gear.weapon;
   const incDmg = g('incAll');
-  const physMin = (hasWeapon ? g('w_physMin') : 2) + g('addPhysMin');
-  const physMax = (hasWeapon ? g('w_physMax') : 4) + g('addPhysMax');
-  const physMult = 1 + (g('incPhys') + incDmg) / 100;
-  const eleMult = 1 + (g('incEle') + incDmg) / 100;
+  let more = 1, eleMore = 1;
+  if (ks.has('resolute')) more *= 1.45;
+  if (ks.has('glass')) more *= 1.6;
+  if (ks.has('overload')) eleMore *= 1.3;
+  const convert = ks.has('overload') ? 1 : Math.min(1, g('convert'));
+  const physMinRaw = (hasWeapon ? g('w_physMin') : 2) + g('addPhysMin');
+  const physMaxRaw = (hasWeapon ? g('w_physMax') : 4) + g('addPhysMax');
+  const physMult = (1 + (g('incPhys') + incDmg) / 100) * more;
+  const eleMult = (1 + (g('incEle') + incDmg) / 100) * more * eleMore;
+  let armour = 10 + g('armour'), evasion = 10 + g('evasion');
+  let incArm = g('incArmour'), incEva = g('incEvasion');
+  if (ks.has('ironRefl')) { armour += evasion; incArm += incEva + 20; evasion = 0; incEva = 0; }
+  let armMore = 1, evaMore = 1;
+  if (ks.has('acrobatics')) { evaMore = 1.3; armMore = 0.5; }
   const st = {
-    physMin: physMin * physMult,
-    physMax: physMax * physMult,
-    eleMin: g('addEleMin') * eleMult,
-    eleMax: g('addEleMax') * eleMult,
+    keystones: ks,
+    physMin: physMinRaw * (1 - convert) * physMult,
+    physMax: physMaxRaw * (1 - convert) * physMult,
+    eleMin: (g('addEleMin') + physMinRaw * convert) * eleMult,
+    eleMax: (g('addEleMax') + physMaxRaw * convert) * eleMult,
     aps: Math.min(8, (hasWeapon ? g('w_aps') : 1.2) * (1 + g('aps') / 100)),
-    crit: Math.min(95, (hasWeapon ? g('w_crit') : 5) * (1 + g('critChance') / 100)),
-    critMulti: 150 + g('critMulti'),
-    maxLife: (50 + 14 * (state.level - 1) + g('life')) * (1 + g('incLife') / 100),
-    armour: (10 + g('armour')) * (1 + g('incArmour') / 100),
-    evasion: (10 + g('evasion')) * (1 + g('incEvasion') / 100),
+    crit: ks.has('resolute') ? 0 : Math.min(95, (hasWeapon ? g('w_crit') : 5) * (1 + g('critChance') / 100)),
+    critMulti: 150 + g('critMulti') + (ks.has('assassin') ? 120 : 0),
+    nonCritMult: ks.has('assassin') ? 0.6 : 1,
+    maxLife: (50 + 14 * (state.level - 1) + g('life')) * (1 + g('incLife') / 100) * (ks.has('glass') ? 0.5 : 1),
+    armour: armour * (1 + incArm / 100) * armMore,
+    evasion: evasion * (1 + incEva / 100) * evaMore,
+    evadeCap: ks.has('acrobatics') ? 0.85 : 0.7,
+    resistCap: RESIST_CAP + (ks.has('bulwark') ? 10 : 0),
     resistRaw: g('resist'),
     block: gear.offhand ? Math.min(60, g('block')) : 0,
     lifeOnHit: g('lifeOnHit'),
-    leech: Math.min(20, g('leech')),
+    leech: Math.min(30, g('leech') * (ks.has('vaalPact') ? 3 : 1)),
     goldFind: g('goldFind'),
     rarity: g('rarity'),
     xpGain: g('xpGain'),
   };
-  st.regen = g('regen') + st.maxLife * g('regenPct') / 100;
-  st.resist = Math.min(RESIST_CAP, st.resistRaw - resistPenalty(state.stage));
+  st.regen = ks.has('vaalPact') ? 0 : g('regen') + st.maxLife * (g('regenPct') + (ks.has('bulwark') ? 1 : 0)) / 100;
+  st.resist = Math.min(st.resistCap, st.resistRaw - resistPenalty(combatLevel(state)));
   const avgHit = (st.physMin + st.physMax) / 2 + (st.eleMin + st.eleMax) / 2;
   st.avgHit = avgHit;
-  st.dps = avgHit * st.aps * (1 + (st.crit / 100) * (st.critMulti / 100 - 1));
+  const cc = st.crit / 100;
+  st.dps = avgHit * st.aps * ((1 - cc) * st.nonCritMult + cc * st.critMulti / 100);
 
   // Defensive picture against the current stage
-  const mon = monsterFor(state.stage);
-  st.evadeChance = evadeChance(st.evasion, mon.acc);
+  const mon = monsterFor(combatLevel(state), false, 'normal');
+  st.evadeChance = evadeChance(st.evasion, mon.acc, st.evadeCap);
   st.armourRed = armourReduction(st.armour, mon.dmg);
   const resRed = st.resist / 100;
   const taken = (1 - st.evadeChance) * (1 - st.block / 100) *
@@ -80,7 +97,7 @@ export function computeStats(state, gear = state.gear) {
   return st;
 }
 
-export const evadeChance = (ev, acc) => Math.min(0.7, ev / (ev + acc * 2.5));
+export const evadeChance = (ev, acc, cap = 0.7) => Math.min(cap, ev / (ev + acc * 2.5));
 export const armourReduction = (armour, hit) => Math.min(0.9, armour / (armour + 8 * hit));
 
 // Which slot would an item go into, and what would it replace?
@@ -108,5 +125,3 @@ export function evaluateItem(state, item, basePower) {
 }
 
 export const xpToNext = (level) => Math.ceil(22 * S(level) * (1 + level * 0.06));
-export const passivePointsTotal = (level) => level - 1;
-export const passivePointsSpent = (state) => Object.values(state.passives).reduce((a, b) => a + b, 0);

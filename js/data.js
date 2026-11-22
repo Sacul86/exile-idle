@@ -88,23 +88,6 @@ export const AFFIXES = [
 ];
 export const AFFIX_BY_ID = Object.fromEntries(AFFIXES.map((a) => [a.id, a]));
 
-// Passive tree: 1 point per level. Each node has ranks.
-export const PASSIVES = [
-  { id: 'brutality', name: 'Brutality',     icon: '🪓', desc: '+5% increased Physical Damage',     stat: 'incPhys',   per: 5,   max: 30 },
-  { id: 'elemental', name: 'Elementalist',  icon: '🔥', desc: '+5% increased Elemental Damage',    stat: 'incEle',    per: 5,   max: 30 },
-  { id: 'swift',     name: 'Swiftness',     icon: '💨', desc: '+2% increased Attack Speed',        stat: 'aps',       per: 2,   max: 20 },
-  { id: 'precision', name: 'Precision',     icon: '🎯', desc: '+6% increased Crit Chance',         stat: 'critChance',per: 6,   max: 25 },
-  { id: 'ruthless',  name: 'Ruthless',      icon: '💀', desc: '+5% Crit Multiplier',               stat: 'critMulti', per: 5,   max: 25 },
-  { id: 'vitality',  name: 'Vitality',      icon: '❤️', desc: '+4% increased maximum Life',        stat: 'incLife',   per: 4,   max: 30 },
-  { id: 'ironskin',  name: 'Iron Skin',     icon: '🪨', desc: '+6% increased Armour',              stat: 'incArmour', per: 6,   max: 25 },
-  { id: 'phase',     name: 'Phase Walk',    icon: '👻', desc: '+6% increased Evasion',             stat: 'incEvasion',per: 6,   max: 25 },
-  { id: 'warding',   name: 'Warding',       icon: '🔮', desc: '+2% Elemental Resistance',          stat: 'resist',    per: 2,   max: 20 },
-  { id: 'renewal',   name: 'Renewal',       icon: '🌿', desc: 'Regenerate 0.3% of Life per second',stat: 'regenPct',  per: 0.3, max: 10 },
-  { id: 'greed',     name: 'Greed',         icon: '💰', desc: '+6% increased Gold Found',          stat: 'goldFind',  per: 6,   max: 20 },
-  { id: 'fortune',   name: 'Fortune',       icon: '🍀', desc: '+5% increased Item Rarity',         stat: 'rarity',    per: 5,   max: 20 },
-  { id: 'wisdom',    name: 'Wisdom',        icon: '📘', desc: '+4% increased Experience Gain',     stat: 'xpGain',    per: 4,   max: 20 },
-];
-
 export const ZONES = [
   { name: 'The Twilight Strand', monsters: ['🧟', '🦀', '🐍'], boss: '🧟‍♂️', bossName: 'Hillock' },
   { name: 'The Ledge',           monsters: ['🦇', '🐗', '🕷️'], boss: '🦂', bossName: 'Brutus' },
