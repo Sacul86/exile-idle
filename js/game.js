@@ -1,6 +1,7 @@
 // Core game engine: state, combat ticks, loot, campaign / dungeon / raid progression.
 import { S, SLOTS, MONSTERS_PER_STAGE, isBossStage, zoneFor, ZONES, RARITIES, STAGES_PER_ZONE } from './data.js';
 import { generateItem, salvageValue } from './items.js';
+import { SETS } from './classdata.js';
 import { NODES, isAllocatable, pathTo, treePointsFree, allocatedSet } from './tree.js';
 import { SKILL_BY_ID, skillSlots, unlockedSkills, skillEffective } from './skills.js';
 import { computeStats, monsterFor, evaluateItem, xpToNext, evadeChance, armourReduction, combatLevel } from './stats.js';
@@ -11,7 +12,7 @@ export const BAG_SIZE = 60;
 export function newState() {
   const gear = Object.fromEntries(SLOTS.map((s) => [s.id, null]));
   const st = {
-    version: 2, treeVersion: 2,
+    version: 2, treeVersion: 2, asc: [],
     level: 1, xp: 0, gold: 0, shards: 0, keys: 0, sigils: 0,
     stage: 1, maxStage: 1, kills: 0, totalKills: 0, deaths: 0,
     gear, bag: [], cls: null, tree: [],
@@ -38,6 +39,7 @@ export function load() {
     const st = { ...base, ...s, settings: { ...base.settings, ...s.settings } };
     st.skills = s.skills || base.skills;
     st.skills.mods = st.skills.mods || {};
+    st.asc = st.asc || [];
     syncSkills(st);
     if (s.treeVersion !== 2) { st.tree = []; st.treeVersion = 2; st.treeReset = (s.tree || []).length > 0; }
     st.tree = st.tree.filter((id) => NODES[id]);
@@ -166,13 +168,14 @@ export function tick(state, dt, ev) {
   const dmgBuff = 1 + (c.buffs.dmg ? c.buffs.dmg.v : 0) + (c.shield && c.shield.dmg ? c.shield.dmg : 0);
   const apsBuff = 1 + (c.buffs.aps ? c.buffs.aps.v : 0);
   if (m.expose) { m.expose.t -= dt; if (m.expose.t <= 0) m.expose = null; }
-  const strike = (mult, eleBoost = 1, critBonus = 0, leechBonus = 0) => {
+  const strike = (mult, eleBoost = 1, critBonus = 0, leechBonus = 0, forceCrit = false) => {
     const exposeMult = 1 + (m.expose ? m.expose.v : 0) + (m.frozen > 0 && m.brittle ? m.brittle : 0);
     let dmg = (rr(st.physMin, st.physMax) + rr(st.eleMin, st.eleMax) * eleBoost) * mult * dmgBuff * exposeMult;
-    const crit = Math.random() * 100 < st.crit;
+    const crit = forceCrit || Math.random() * 100 < st.crit;
     dmg *= crit ? (st.critMulti + critBonus) / 100 : st.nonCritMult;
     m.hp -= dmg;
-    c.hp = Math.min(st.maxLife, c.hp + st.lifeOnHit + dmg * (st.leech + leechBonus) / 100);
+    const leechNow = st.leech + leechBonus + (c.buffs.leech ? c.buffs.leech.v : 0);
+    c.hp = Math.min(st.maxLife, c.hp + st.lifeOnHit + st.maxLife * st.lifeOnHitPct / 100 + dmg * leechNow / 100);
     ev && ev.push({ t: 'hit', dmg, crit, who: 'm' });
   };
 
@@ -187,28 +190,31 @@ export function tick(state, dt, ev) {
     if (!id || m.hp <= 0) continue;
     const sk = SKILL_BY_ID[id], rank = state.skills.ranks[id] || 1;
     const ef = skillEffective(sk, rank, state.skills.mods[id]);
-    c.cds[id] = (c.cds[id] ?? ef.cooldown * 0.5) - dt;
+    const cdMult = 1 - st.cdr / 100;
+    c.cds[id] = (c.cds[id] ?? ef.cooldown * cdMult * 0.5) - dt;
     if (c.cds[id] > 0) continue;
-    const p = ef.power;
+    const p = ef.power * (1 + st.skillPow / 100);
     if (sk.kind === 'heal') {
       if (c.hp > st.maxLife * ef.thresh) { c.cds[id] = 0; continue; }
       c.hp = Math.min(st.maxLife, c.hp + st.maxLife * p);
       if (ef.dmgBuff) c.buffs.dmg = { v: Math.max(ef.dmgBuff, c.buffs.dmg ? c.buffs.dmg.v : 0), t: 4 };
       if (ef.shield) c.shield = { v: st.maxLife * ef.shield, t: 6, dmg: 0 };
     } else if (sk.kind === 'hit') {
-      for (let n = 0; n < ef.casts; n++) for (let i = 0; i < ef.hits; i++) strike(p, sk.ele ? 2 : 1, ef.critm, ef.leech);
+      for (let n = 0; n < ef.casts; n++) for (let i = 0; i < ef.hits; i++) strike(p, sk.ele ? 2 : 1, ef.critm, ef.leech, ef.alwaysCrit);
       if (ef.expose) m.expose = { v: ef.expose, t: ef.exposeDur };
     } else if (sk.kind === 'freeze') {
       for (let n = 0; n < ef.casts; n++) strike(p);
       m.frozen = ef.duration * (m.boss && !ef.bossFull ? 0.5 : 1);
       m.brittle = ef.brittle;
+      m.stunned = !!sk.stun;
     } else if (sk.kind === 'shield') {
       c.shield = { v: st.maxLife * p, t: ef.duration, dmg: ef.shieldDmg };
     } else if (sk.kind === 'buff') {
-      c.buffs[sk.stat] = { v: p, t: ef.duration };
+      if (sk.buffs) for (const [k, v] of Object.entries(sk.buffs)) c.buffs[k] = { v: v * p, t: ef.duration };
+      else c.buffs[sk.stat] = { v: p, t: ef.duration };
     }
     if (ef.heal) c.hp = Math.min(st.maxLife, c.hp + st.maxLife * ef.heal);
-    c.cds[id] = ef.cooldown;
+    c.cds[id] = ef.cooldown * cdMult;
     ev && ev.push({ t: 'skill', id });
   }
   if (m.hp <= 0) { onKill(state, m, ev); return; }
@@ -230,7 +236,7 @@ export function tick(state, dt, ev) {
   if (m.frozen > 0) { m.frozen -= dt; return; }
   const enr = enrageMult(m);
   const hitPlayer = (raw, isSlam) => {
-    if (Math.random() < evadeChance(st.evasion, m.acc, st.evadeCap)) { ev && ev.push({ t: 'evade' }); return false; }
+    if (Math.random() < Math.min(0.9, evadeChance(st.evasion, m.acc, st.evadeCap) + (c.buffs.evade ? c.buffs.evade.v : 0))) { ev && ev.push({ t: 'evade' }); return false; }
     if (Math.random() * 100 < st.block) { ev && ev.push({ t: 'block' }); return false; }
     const phys = raw * m.physShare, ele = raw - phys;
     let dmg = phys * (1 - armourReduction(st.armour, phys)) + ele * (1 - st.resist / 100);
@@ -268,11 +274,17 @@ function onDeath(state, ev) {
   ev && ev.push({ t: 'death' });
 }
 
-function dropItems(state, n, ilvl, rarityBonus, minRarity, ev) {
+function dropItems(state, n, ilvl, rarityBonus, minRarity, ev, setChance = 0) {
   const st = state.combat.stats;
+  const cls = state.cls;
   for (let i = 0; i < n; i++) {
-    let item = generateItem(ilvl, { rarityPct: st.rarity, rarityBonus });
-    if (item.rarity < minRarity) item = generateItem(ilvl, { type: item.type, rarity: minRarity });
+    if (setChance && Math.random() < setChance) {
+      const setId = Math.random() < 0.6 && cls ? cls : Object.keys(SETS)[Math.floor(Math.random() * 6)];
+      handleLoot(state, generateItem(ilvl, { set: setId }), ev);
+      continue;
+    }
+    let item = generateItem(ilvl, { rarityPct: st.rarity, rarityBonus, cls });
+    if (item.rarity < minRarity) item = generateItem(ilvl, { type: item.type, rarity: minRarity, cls });
     handleLoot(state, item, ev);
   }
 }
@@ -299,7 +311,7 @@ function onKill(state, m, ev) {
   if (m.raid) {
     dropItems(state, 1, lvl + 3, 0, 4, ev);                                        // 1 guaranteed Legendary+
     if (Math.random() < 0.1 + run.tier * 0.005) dropItems(state, 1, lvl + 3, 0, 5, ev); // Mythic chance
-    dropItems(state, 3, lvl + 3, 300, 3, ev);                                      // 3 Epic+
+    dropItems(state, 3, lvl + 3, 300, 3, ev, 0.5);                                 // 3 Epic+ (50% set items)
     const shards = Math.ceil(150 * (1 + run.tier));
     state.shards += shards;
     state.raidsCleared[run.tier] = (state.raidsCleared[run.tier] || 0) + 1;
@@ -310,7 +322,7 @@ function onKill(state, m, ev) {
   // ---- Dungeon ----
   if (run && run.kind === 'dungeon') {
     if (m.boss) {
-      dropItems(state, 4, lvl + 2, 300, 2, ev);                                    // 4 items, Rare+
+      dropItems(state, 4, lvl + 2, 300, 2, ev, 0.25);                              // 4 items, Rare+ (25% set)
       const first = !state.dungeonsCleared[run.tier];
       const sigil = first || Math.random() < 0.35;
       if (sigil) state.sigils++;
@@ -332,7 +344,7 @@ function onKill(state, m, ev) {
   if (m.boss) drops = 3;
   else if (m.elite) drops = 1 + (Math.random() < 0.4 ? 1 : 0);
   else if (Math.random() < 0.3) drops = 1;
-  dropItems(state, drops, state.stage + (m.boss ? 2 : 0), m.boss ? 150 : m.elite ? 50 : 0, 0, ev);
+  dropItems(state, drops, state.stage + (m.boss ? 2 : 0), m.boss ? 150 : m.elite ? 50 : 0, 0, ev, m.boss && state.stage >= 20 ? 0.12 : 0);
   if (m.boss) {
     const zi = state.stage / STAGES_PER_ZONE;
     const first = !state.bossesBeaten[zi];
@@ -370,13 +382,18 @@ export function gainXp(state, xp, ev) {
 // Unlock skills for the current level and fill empty bar slots. Returns newly unlocked.
 export function syncSkills(state) {
   const fresh = [];
-  for (const sk of unlockedSkills(state.level)) {
+  for (const sk of unlockedSkills(state.level, state.cls)) {
     if (!state.skills.ranks[sk.id]) { state.skills.ranks[sk.id] = 1; fresh.push(sk); }
   }
   const slots = skillSlots(state.level);
   for (const sk of fresh) {
     const bar = state.skills.bar;
-    for (let i = 0; i < slots; i++) if (!bar[i]) { bar[i] = sk.id; break; }
+    let placed = false;
+    for (let i = 0; i < slots; i++) if (!bar[i]) { bar[i] = sk.id; placed = true; break; }
+    // class skills bump the last generic skill if the bar is full
+    if (!placed && sk.cls) {
+      for (let i = slots - 1; i >= 0; i--) if (!SKILL_BY_ID[bar[i]].cls) { bar[i] = sk.id; break; }
+    }
   }
   return fresh;
 }
@@ -405,7 +422,7 @@ export function autoAllocate(state, maxPoints = Infinity) {
 }
 
 export function logLoot(state, item, action) {
-  state.lootLog.unshift({ name: item.name, rarity: item.rarity, ilvl: item.ilvl, action, type: item.type });
+  state.lootLog.unshift({ name: item.name, rarity: item.rarity, ilvl: item.ilvl, action, type: item.type, set: !!item.set });
   if (state.lootLog.length > 30) state.lootLog.length = 30;
 }
 

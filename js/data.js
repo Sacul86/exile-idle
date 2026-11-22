@@ -10,7 +10,7 @@ export const RARITIES = [
   { id: 2, name: 'Rare',      color: '#f2d64b', affixes: [3, 4], maxUpgrade: 12, shards: 8,   weight: 13,  minStage: 3 },
   { id: 3, name: 'Epic',      color: '#b46bff', affixes: [4, 5], maxUpgrade: 15, shards: 20,  weight: 4,   minStage: 8 },
   { id: 4, name: 'Legendary', color: '#ff8a2b', affixes: [6, 6], maxUpgrade: 20, shards: 60,  weight: 0.9, minStage: 15 },
-  { id: 5, name: 'Mythic',    color: '#ff3b5c', affixes: [6, 6], maxUpgrade: 25, shards: 200, weight: 0.12, minStage: 40 },
+  { id: 5, name: 'Mythic',    color: '#ff3b5c', affixes: [5, 5], maxUpgrade: 25, shards: 200, weight: 0.12, minStage: 40 },
 ];
 
 // Minimum affix tier index (0 = T7 worst ... 6 = T1 best) forced by rarity.
@@ -41,6 +41,11 @@ export const WEAPON_KINDS = {
   Sword:  { dmg: 1.0,  aps: 1.3,  crit: 5,   names: ['Rusted Sword', 'Iron Blade', 'Broadsword', 'War Sword', 'Ancient Blade', 'Eternal Sword', 'Exalted Blade', 'Godforged Sword'] },
   Axe:    { dmg: 1.3,  aps: 1.1,  crit: 5,   names: ['Hatchet', 'Cleaver', 'Battle Axe', 'Reaver Axe', 'Butcher Axe', 'Despot Axe', 'Titan Axe', 'Worldsplitter'] },
   Mace:   { dmg: 1.2,  aps: 1.15, crit: 4,   names: ['Club', 'Spiked Club', 'Flanged Mace', 'Ornate Mace', 'Dragon Mace', 'Behemoth Mace', 'Colossus Mace', 'Starfall Maul'] },
+  Wand:   { dmg: 0.7,  aps: 1.45, crit: 7,   imp: { incEle: 25 }, names: ['Driftwood Wand', 'Goat Horn', 'Carved Wand', 'Quartz Wand', 'Spiraled Wand', 'Crystal Wand', 'Prophecy Wand', 'Wand of the Void'] },
+  Staff:  { dmg: 1.45, aps: 1.0,  crit: 6.5, imp: { incEle: 15, block: 8 }, names: ['Gnarled Branch', 'Quarterstaff', 'Long Staff', 'Iron Staff', 'Serpentine Staff', 'Foul Staff', 'Eclipse Staff', 'Staff of Ages'] },
+  Claw:   { dmg: 0.8,  aps: 1.5,  crit: 6.5, imp: { lifeOnHitPct: 1 }, names: ['Nailed Fist', 'Sharktooth Claw', 'Awl', 'Cat\'s Paw', 'Blinder', 'Gut Ripper', 'Eagle Claw', 'Hellion Talon'] },
+  Bow:    { dmg: 1.1,  aps: 1.25, crit: 6,   imp: { critMulti: 15 }, names: ['Crude Bow', 'Short Bow', 'Long Bow', 'Composite Bow', 'Recurve Bow', 'Royal Bow', 'Thicket Bow', 'Harbinger Bow'] },
+  Sceptre:{ dmg: 1.0,  aps: 1.2,  crit: 5.5, imp: { incEle: 12, incArmour: 10 }, names: ['Driftwood Sceptre', 'Darkwood Sceptre', 'Bronze Sceptre', 'Quartz Sceptre', 'Crystal Sceptre', 'Lead Sceptre', 'Void Sceptre', 'Sceptre of Dawn'] },
 };
 export const BASE_NAMES = {
   offhand: ['Plank Shield', 'Buckler', 'Kite Shield', 'Tower Shield', 'Ancestral Shield', 'Titanium Shield', 'Aegis', 'Bulwark of Ages'],
@@ -86,6 +91,23 @@ export const AFFIXES = [
   { id: 'rarity',    type: 'suffix', kind: 'pct',   base: 10,  text: '+{v}% increased Item Rarity',                   slots: ['helm', 'ring', 'amulet', 'boots'] },
   { id: 'xpGain',    type: 'suffix', kind: 'pct',   base: 6,   text: '+{v}% increased Experience Gain',               slots: ['amulet', 'helm'] },
 ];
+// Mythic uniques: fixed name + a unique power. One is picked when a Mythic drops.
+export const MYTHICS = [
+  { id: 'starforge',   type: 'weapon',  name: 'Starforge',            power: { moreDmg: 40 },                     text: ['40% more Damage'] },
+  { id: 'soulrend',    type: 'weapon',  name: 'Soulrend',             power: { cdr: 25, skillPow: 30 },           text: ['Skills recharge 25% faster', 'Skills deal 30% more damage / effect'] },
+  { id: 'eyecrown',    type: 'helm',    name: 'Crown of a Thousand Eyes', power: { skillPow: 40, critChance: 30 }, text: ['Skills deal 40% more damage / effect', '+30% increased Crit Chance'] },
+  { id: 'titanheart',  type: 'chest',   name: 'Heart of the Titan',   power: { incLife: 50, regenPct: 1 },        text: ['+50% increased maximum Life', 'Regenerate 1% Life per second'] },
+  { id: 'veilshroud',  type: 'chest',   name: 'Veil of the Unseen',   power: { evadeCap: 10, incEvasion: 60 },    text: ['+10% maximum Evade chance', '+60% increased Evasion'] },
+  { id: 'stormfist',   type: 'gloves',  name: 'Stormfist',            power: { incEle: 50, aps: 12 },             text: ['+50% increased Elemental Damage', '+12% increased Attack Speed'] },
+  { id: 'farstride',   type: 'boots',   name: 'Farstride',            power: { aps: 15, incEvasion: 40 },         text: ['+15% increased Attack Speed', '+40% increased Evasion'] },
+  { id: 'soulbinder',  type: 'belt',    name: 'The Soulbinder',       power: { moreDmg: 20, xpGain: 25 },         text: ['20% more Damage', '+25% increased Experience Gain'] },
+  { id: 'bloodpact',   type: 'amulet',  name: 'Blood Covenant',       power: { leech: 3, moreDmg: 15 },           text: ['3% of Damage Leeched as Life', '15% more Damage'] },
+  { id: 'voideye',     type: 'ring',    name: 'Voideye',              power: { critChance: 60, critMulti: 40 },   text: ['+60% increased Crit Chance', '+40% to Crit Multiplier'] },
+  { id: 'fortune',     type: 'ring',    name: 'Gambler\'s Fortune',  power: { rarity: 60, goldFind: 60, resist: 10 }, text: ['+60% Item Rarity', '+60% Gold Found', '+10% Elemental Resistance'] },
+  { id: 'aegis',       type: 'offhand', name: 'Aegis of Dawn',        power: { block: 15, maxRes: 5 },            text: ['+15% Chance to Block', '+5% to maximum Elemental Resistance'] },
+];
+export const MYTHIC_BY_ID = Object.fromEntries(MYTHICS.map((m) => [m.id, m]));
+
 export const AFFIX_BY_ID = Object.fromEntries(AFFIXES.map((a) => [a.id, a]));
 
 export const ZONES = [

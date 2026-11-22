@@ -1,7 +1,8 @@
 import {
   S, RARITIES, RARITY_TIER_FLOOR, ITEM_TYPES, BASE_ILVLS, WEAPON_KINDS, BASE_NAMES,
-  SLOT_DEF_MULT, TIER_ILVL, TIER_MULT, AFFIXES, AFFIX_BY_ID,
+  SLOT_DEF_MULT, TIER_ILVL, TIER_MULT, AFFIXES, AFFIX_BY_ID, MYTHICS, MYTHIC_BY_ID,
 } from './data.js';
+import { CLASS_WEAPONS, SETS, SET_SLOTS, setPieceName } from './classdata.js';
 
 let uidCounter = Date.now() % 1e9;
 export const uid = () => (++uidCounter).toString(36);
@@ -97,7 +98,7 @@ function rollImplicit(type, ilvl, baseIdx, kindName) {
   switch (type) {
     case 'weapon': {
       const k = WEAPON_KINDS[kindName];
-      return { physMin: 2.5 * s * k.dmg * q, physMax: 5 * s * k.dmg * q, aps: k.aps, crit: k.crit };
+      return { physMin: 2.5 * s * k.dmg * q, physMax: 5 * s * k.dmg * q, aps: k.aps, crit: k.crit, ...(k.imp || {}) };
     }
     case 'offhand':
       return { armour: 16 * s * SLOT_DEF_MULT.offhand * q, block: 15 + baseIdx * 1.5 };
@@ -115,12 +116,14 @@ function rollImplicit(type, ilvl, baseIdx, kindName) {
 }
 
 export function generateItem(ilvl, opts = {}) {
+  if (opts.set) return generateSetItem(ilvl, opts.set, opts.type);
   const type = opts.type || pick(ITEM_TYPES);
   const rarity = opts.rarity ?? rollRarity(ilvl, opts.rarityPct || 0, opts.rarityBonus || 0);
   const baseIdx = baseIndexFor(ilvl);
   let name, implicit, kind, defType;
   if (type === 'weapon') {
-    kind = pick(Object.keys(WEAPON_KINDS));
+    const clsKinds = CLASS_WEAPONS[opts.cls];
+    kind = clsKinds && Math.random() < 0.5 ? pick(clsKinds) : pick(Object.keys(WEAPON_KINDS));
     name = WEAPON_KINDS[kind].names[baseIdx];
     implicit = rollImplicit(type, ilvl, baseIdx, kind);
   } else if (['helm', 'chest', 'gloves', 'boots'].includes(type)) {
@@ -134,10 +137,26 @@ export function generateItem(ilvl, opts = {}) {
   }
   const [lo, hi] = RARITIES[rarity].affixes;
   const affixes = rollAffixes(type, ilvl, rarity, randInt(lo, hi));
-  return {
+  const item = {
     uid: uid(), type, name, kind, defType, rarity, ilvl, baseIdx, implicit, affixes,
     upgrade: 0, locked: false, isNew: true,
   };
+  if (rarity === 5) {
+    const pool = MYTHICS.filter((m) => m.type === type);
+    if (pool.length) { const m = pick(pool); item.mythic = m.id; item.baseName = name; item.name = m.name; }
+  }
+  return item;
+}
+
+// Set items: Epic-grade with 4 mods, a fixed name and membership of a class set
+export function generateSetItem(ilvl, setId, type) {
+  type = type && SET_SLOTS.includes(type) ? type : pick(SET_SLOTS);
+  const it = generateItem(ilvl, { type, rarity: 3 });
+  it.affixes = rollAffixes(type, ilvl, 3, 4);
+  it.baseName = it.name;
+  it.name = setPieceName(setId, type);
+  it.set = setId;
+  return it;
 }
 
 // Multiplier from +N upgrade level
@@ -150,10 +169,13 @@ export function itemStats(item) {
   const add = (k, v) => { out[k] = (out[k] || 0) + v; };
   const imp = item.implicit || {};
   for (const [k, v] of Object.entries(imp)) {
-    if (k === 'aps' || k === 'crit') add('w_' + k, v); // weapon base values, not scaled
-    else if (k === 'block') add('block', v);
+    if (item.type === 'weapon' && (k === 'aps' || k === 'crit')) add('w_' + k, v); // weapon base values, not scaled
+    else if (k === 'block' || k === 'lifeOnHitPct') add(k, v);
     else if (k === 'physMin' || k === 'physMax') add('w_' + k, v * m);
     else add(k, v * m);
+  }
+  if (item.mythic && MYTHIC_BY_ID[item.mythic]) {
+    for (const [k, v] of Object.entries(MYTHIC_BY_ID[item.mythic].power)) add(k, v);
   }
   for (const a of item.affixes) {
     if (a.min != null) {
@@ -206,8 +228,15 @@ export function describeImplicit(item) {
   }
   if (imp.armour != null) lines.push(`Armour: ${fmt(imp.armour * m)}`);
   if (imp.evasion != null) lines.push(`Evasion: ${fmt(imp.evasion * m)}`);
-  if (imp.block != null) lines.push(`Chance to Block: ${imp.block.toFixed(1)}%`);
+  if (imp.block != null && item.type === 'offhand') lines.push(`Chance to Block: ${imp.block.toFixed(1)}%`);
   if (imp.life != null) lines.push(`+${fmt(imp.life * m)} to maximum Life`);
+  if (item.type === 'weapon') {
+    if (imp.incEle != null) lines.push(`+${fmt(imp.incEle * m)}% increased Elemental Damage`);
+    if (imp.critMulti != null) lines.push(`+${fmt(imp.critMulti * m)}% to Crit Multiplier`);
+    if (imp.lifeOnHitPct != null) lines.push(`Gain ${imp.lifeOnHitPct}% of Life per Hit`);
+    if (imp.incArmour != null) lines.push(`+${fmt(imp.incArmour * m)}% increased Armour`);
+    if (imp.block != null && !imp.armour) lines.push(`+${imp.block}% Chance to Block`);
+  }
   if (imp.incAll != null) lines.push(`+${fmt(imp.incAll * m)}% increased Damage`);
   if (imp.resist != null) lines.push(`+${fmt(imp.resist * m)}% to Elemental Resistance`);
   return lines;

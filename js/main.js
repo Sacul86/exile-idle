@@ -8,12 +8,14 @@ import {
   CLASSES, CLASS_BY_ID, NODES, KEYSTONES, treePointsFree, treePointsTotal, isAllocatable, pathTo, canRefund,
   nodeLines, refundCost, resetCost, allocatedSet,
 } from './tree.js';
-import { SKILLS, SKILL_BY_ID, skillSlots, skillUpgradeCost, MAX_SKILL_RANK, MILESTONES, skillMods, skillEffective, skillDescFull, respecModCost } from './skills.js';
+import { SKILLS, skillsFor, SKILL_BY_ID, skillSlots, skillUpgradeCost, MAX_SKILL_RANK, MILESTONES, skillMods, skillEffective, skillDescFull, respecModCost } from './skills.js';
 import { Arena } from './fx.js';
+import { CLASS_WEAPONS, WEAPON_MASTERY, SETS, SET_SLOTS, setCounts, ASCENDANCY, ASC_LEVELS, ascRespecCost, isClassWeapon } from './classdata.js';
+import { MYTHIC_BY_ID } from './data.js';
 import { renderTreeSvg, zoom, centerOn, getSelected, setSelected, resetView } from './treeview.js';
 import {
   newState, load, save, tick, ensureCombat, refreshStats, simulate, salvage, equipFromBag, unequip, BAG_SIZE, SAVE_KEY,
-  startRun, abandonRun, dungeonTiers, raidUnlocked, dungeonLevel, raidLevel, dungeonName, raidName, DUNGEON, enrageMult, autoAllocate,
+  startRun, abandonRun, syncSkills, dungeonTiers, raidUnlocked, dungeonLevel, raidLevel, dungeonName, raidName, DUNGEON, enrageMult, autoAllocate,
 } from './game.js';
 
 let state = load() || newState();
@@ -28,7 +30,10 @@ const view = $('#view');
 
 // ---------- helpers ----------
 const rc = (r) => 'r' + r;
-const icon = (item) => item.type === 'weapon' ? { Dagger: '🗡️', Sword: '⚔️', Axe: '🪓', Mace: '🔨' }[item.kind] || '🗡️' : TYPE_ICONS[item.type];
+const nc = (it) => (it.set ? 'rset' : 'r' + it.rarity); // name colour
+const bcl = (it) => (it.set ? 'bcset' : 'bc' + it.rarity);
+const WICONS = { Dagger: '🗡️', Sword: '⚔️', Axe: '🪓', Mace: '🔨', Wand: '🪄', Staff: '🔮', Claw: '🐾', Bow: '🏹', Sceptre: '🏵️' };
+const icon = (item) => item.type === 'weapon' ? WICONS[item.kind] || '🗡️' : TYPE_ICONS[item.type];
 const costOk = (c) => state.gold >= c.gold && state.shards >= c.shards;
 const costText = (c) => `🪙${fmt(c.gold)} 💠${fmt(c.shards)}`;
 function toast(msg) {
@@ -56,7 +61,7 @@ function renderHud() {
   const newCount = state.bag.filter((b) => b.isNew).length;
   $('#bag-badge').textContent = newCount ? (newCount > 99 ? '99+' : newCount) : '';
   const pts = state.cls ? treePointsFree(state) : 0;
-  $('#tree-badge').textContent = pts > 0 ? pts : '';
+  $('#tree-badge').textContent = pts > 0 ? pts : (state.cls && ascPending() ? '!' : '');
   const eg = (state.keys > 0 && dungeonTiers(state) > 0 ? state.keys : 0) + state.sigils;
   $('#end-badge').textContent = state.run ? '⚔️' : eg ? eg : '';
 }
@@ -124,7 +129,7 @@ function renderFeed() {
   const f = $('#feed');
   if (!f) return;
   f.innerHTML = state.lootLog.slice(0, 12).map((l) =>
-    `<div><span class="${rc(l.rarity)}">${TYPE_ICONS[l.type]} ${l.name} <span class="muted">i${l.ilvl}</span></span><span class="act ${l.action}">${l.action}</span></div>`
+    `<div><span class="${l.set ? 'rset' : rc(l.rarity)}">${TYPE_ICONS[l.type]} ${l.name} <span class="muted">i${l.ilvl}</span></span><span class="act ${l.action}">${l.action}</span></div>`
   ).join('') || '<div class="muted">Kill monsters to find loot.</div>';
 }
 let lastMonster = null;
@@ -180,9 +185,9 @@ function renderGear() {
     <div class="slots">${SLOTS.map((s) => {
       const it = state.gear[s.id];
       if (!it) return `<div class="slot empty"><div class="ic">${TYPE_ICONS[s.type]}</div><div><div class="nm muted">${s.name}</div><div class="sub">Empty</div></div></div>`;
-      return `<div class="slot bc${it.rarity}" data-act="open-eq" data-slot="${s.id}">
+      return `<div class="slot ${bcl(it)}" data-act="open-eq" data-slot="${s.id}">
         <div class="ic">${icon(it)}</div>
-        <div><div class="nm ${rc(it.rarity)}">${it.name}${it.upgrade ? ` +${it.upgrade}` : ''}</div>
+        <div><div class="nm ${nc(it)}">${it.name}${it.upgrade ? ` +${it.upgrade}` : ''}</div>
         <div class="sub">${RARITIES[it.rarity].name} · ilvl ${it.ilvl}</div></div></div>`;
     }).join('')}</div>
     <div class="panel" style="margin-top:10px">
@@ -191,6 +196,9 @@ function renderGear() {
         <div><b>${fmt(st.ehp)}</b><small>Eff. HP</small></div>
         <div><b>${fmt(st.power)}</b><small>Power</small></div>
       </div>
+      ${Object.entries(setCounts(state.gear)).map(([id, n]) => `<div class="set-sum"><b class="rset">${SETS[id].name}</b> <span class="muted">${n}/5</span>
+        ${[2, 3, 5].map((t) => `<div class="${n >= t ? 'good' : 'muted'}">(${t}) ${SETS[id].text[t]}</div>`).join('')}</div>`).join('')}
+      ${state.gear.weapon ? `<div class="${st.mastery ? 'good' : 'muted'}" style="font-size:12px;margin-top:6px">${st.mastery ? `⚔️ Class weapon mastery: ${Math.round(WEAPON_MASTERY * 100)}% more damage` : `Your class masters: ${(CLASS_WEAPONS[state.cls] || []).join(', ')} (${Math.round(WEAPON_MASTERY * 100)}% more damage)`}</div>` : ''}
       <p class="muted" style="font-size:12px;margin:8px 0 0">Better drops are equipped automatically. Tap a slot to upgrade, reroll or promote it.</p>
     </div>`;
 }
@@ -215,7 +223,7 @@ function renderBag() {
     <div class="grid">${items.map((it) => {
       const slot = targetSlot(state, it);
       const better = powerWith(state, slot, it) > base * 1.001;
-      return `<div class="cell bc${it.rarity}" data-act="open-bag" data-uid="${it.uid}">
+      return `<div class="cell ${bcl(it)}" data-act="open-bag" data-uid="${it.uid}">
         ${icon(it)}
         ${it.upgrade ? `<span class="up">+${it.upgrade}</span>` : ''}
         ${it.locked ? '<span class="lk">🔒</span>' : it.isNew ? '<span class="new"></span>' : ''}
@@ -239,21 +247,26 @@ function openItem(item, where, slot) {
     const nxt = computeStats(state, { ...state.gear, [ts]: item });
     const pct = (a, b) => { const v = (b / a - 1) * 100; return `<span class="${v >= 0 ? 'good' : 'bad'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</span>`; };
     const eq = state.gear[ts];
-    cmp = `<div class="muted" style="font-size:12px;text-align:center">vs equipped: ${eq ? `<span class="${rc(eq.rarity)}">${eq.name}${eq.upgrade ? ' +' + eq.upgrade : ''}</span>` : 'nothing'}</div>
+    cmp = `<div class="muted" style="font-size:12px;text-align:center">vs equipped: ${eq ? `<span class="${nc(eq)}">${eq.name}${eq.upgrade ? ' +' + eq.upgrade : ''}</span>` : 'nothing'}</div>
       <div class="cmp"><div><b>${pct(cur.dps, nxt.dps)}</b>DPS</div><div><b>${pct(cur.ehp, nxt.ehp)}</b>Eff. HP</div><div><b>${pct(cur.power, nxt.power)}</b>Power</div></div>`;
   }
   const up = upgradeCost(item), rr = rerollCost(item), pr = promoteCost(item), sv = salvageValue(item);
   const maxT = Math.max(...item.affixes.map((a) => a.tier), -1);
   card.innerHTML = `
-    <div class="item-head bc${item.rarity}">
-      <div class="nm ${rc(item.rarity)}">${icon(item)} ${item.name}${item.upgrade ? ` +${item.upgrade}` : ''}</div>
-      <div class="meta">${r.name} ${item.kind || SLOTS.find((s) => s.type === item.type).name} · Item Level ${item.ilvl} · Upgrade ${item.upgrade}/${r.maxUpgrade}</div>
+    <div class="item-head ${bcl(item)}">
+      <div class="nm ${nc(item)}">${icon(item)} ${item.name}${item.upgrade ? ` +${item.upgrade}` : ''}</div>
+      <div class="meta">${item.set ? 'Set' : item.mythic ? '✦ Mythic' : r.name} ${item.baseName ? item.baseName + ' · ' : ''}${item.kind || SLOTS.find((s) => s.type === item.type).name} · Item Level ${item.ilvl} · Upgrade ${item.upgrade}/${r.maxUpgrade}</div>
     </div>
     <div class="lines">
       ${imp.map((l) => `<div class="imp">${l}</div>`).join('')}
       ${affs.length ? '<hr>' : ''}
       ${affs.map((a) => `<div class="aff"><span>${a.text}</span><span class="t ${a.tier === 'T1' ? 'top' : ''}">${a.type === 'prefix' ? 'P' : 'S'} ${a.tier}</span></div>`).join('')}
       ${!affs.length ? '<div class="muted" style="text-align:center">No modifiers</div>' : ''}
+      ${item.mythic ? `<hr><div class="mythic-pow"><div class="mp-h">✦ Mythic Power</div>${MYTHIC_BY_ID[item.mythic].text.map((t) => `<div>${t}</div>`).join('')}</div>` : ''}
+      ${item.set ? (() => { const n = setCounts(state.gear)[item.set] || 0; const set = SETS[item.set];
+        return `<hr><div class="set-box"><b class="rset">${set.name}</b> <span class="muted">(${n}/5 equipped · ${set.cls[0].toUpperCase() + set.cls.slice(1)} set)</span>
+        ${[2, 3, 5].map((t) => `<div class="${n >= t ? 'good' : 'muted'}">(${t}) ${set.text[t]}</div>`).join('')}</div>`; })() : ''}
+      ${item.type === 'weapon' ? `<hr><div style="text-align:center;font-size:12px" class="${isClassWeapon(state, item) ? 'good' : 'muted'}">${isClassWeapon(state, item) ? `⚔️ Class weapon: ${Math.round(WEAPON_MASTERY * 100)}% more damage` : `${item.kind}: not a ${(CLASS_BY_ID[state.cls] || {}).name || ''} weapon`}</div>` : ''}
     </div>
     ${cmp}
     <div class="actions">
@@ -296,10 +309,12 @@ function renderBuild() {
   const free = treePointsFree(state);
   view.innerHTML = `
     <div class="seg"><button class="${buildSub === 'tree' ? 'on' : ''}" data-act="sub" data-s="tree">🌳 Passive Tree${free ? ` <i>${free}</i>` : ''}</button>
-      <button class="${buildSub === 'skills' ? 'on' : ''}" data-act="sub" data-s="skills">✴️ Skills</button></div>
+      <button class="${buildSub === 'skills' ? 'on' : ''}" data-act="sub" data-s="skills">✴️ Skills</button>
+      <button class="${buildSub === 'class' ? 'on' : ''}" data-act="sub" data-s="class">${cls.icon} Class${ascPending() ? ' <i>!</i>' : ''}</button></div>
     <div id="build-body"></div>`;
   const body = $('#build-body');
   if (buildSub === 'skills') { renderSkills(body); return; }
+  if (buildSub === 'class') { renderClass(body); return; }
   body.innerHTML = `
     <div class="toolbar">
       <span>${cls.icon} <b>${cls.name}</b></span><span style="flex:1"></span>
@@ -356,9 +371,9 @@ function renderSkills(body) {
       ? `<div class="sk locked">🔒<small>Lv ${i === 2 ? 20 : 50}</small></div>`
       : `<div class="sk ${skillPick === i ? 'picking' : ''}" data-act="pick-slot" data-i="${i}">${id ? `<span>${SKILL_BY_ID[id].icon}</span><small>${state.skills.ranks[id]}</small>` : '+'}</div>`).join('')}</div>
     ${skillPick != null ? `<div class="pick-hint">Choose a skill for slot ${skillPick + 1} <button class="btn small" data-act="pick-cancel">Cancel</button></div>` : ''}
-    ${SKILLS.map((sk) => {
+    ${skillsFor(state.cls).map((sk) => {
       const rank = state.skills.ranks[sk.id];
-      if (!rank) return `<div class="node locked"><div class="ic">${sk.icon}</div><div class="info"><b>${sk.name}</b><div>Unlocks at level ${sk.unlock}</div></div></div>`;
+      if (!rank) return `<div class="node locked"><div class="ic">${sk.icon}</div><div class="info"><b>${sk.cls ? '<span class="cls-tag">CLASS</span> ' : ''}${sk.name}</b><div>Unlocks at level ${sk.unlock}</div></div></div>`;
       const c = skillUpgradeCost(rank, state.level);
       const inBar = state.skills.bar.slice(0, slots).includes(sk.id);
       const picks = state.skills.mods[sk.id] || [];
@@ -366,7 +381,7 @@ function renderSkills(body) {
       const pips = MILESTONES.map((m, i) => `<span class="pip ${picks[i] != null && rank >= m ? 'on' : rank >= m ? 'ready' : ''}"></span>`).join('');
       return `<div class="node ${inBar ? 'inbar' : ''}" data-act="${skillPick != null ? 'assign' : 'skill-open'}" data-id="${sk.id}">
         <div class="ic">${sk.icon}</div>
-        <div class="info"><b>${sk.name} <span class="muted">R${rank}</span>${inBar ? ' <span class="good">●</span>' : ''} <span class="pips">${pips}</span>${pending ? ' <span class="newmod">NEW</span>' : ''}</b><div>${skillDescFull(sk, rank, picks)}</div></div>
+        <div class="info"><b>${sk.cls ? '<span class="cls-tag">CLASS</span> ' : ''}${sk.name} <span class="muted">R${rank}</span>${inBar ? ' <span class="good">●</span>' : ''} <span class="pips">${pips}</span>${pending ? ' <span class="newmod">NEW</span>' : ''}</b><div>${skillDescFull(sk, rank, picks)}</div></div>
         ${skillPick == null ? `<button class="btn small primary" data-act="skill-up" data-id="${sk.id}" ${rank < MAX_SKILL_RANK && costOk(c) ? '' : 'disabled'}>⬆️<small style="display:block;font-size:9px">${rank < MAX_SKILL_RANK ? `💠${fmt(c.shards)}` : 'MAX'}</small></button>` : ''}
       </div>`;
     }).join('')}`;
@@ -394,6 +409,40 @@ function openSkill(id) {
     <button class="btn full" style="width:100%" data-act="close">Close</button>`;
   modalCtx = { skill: id };
   $('#modal').classList.remove('hidden');
+}
+
+function ascPending() {
+  return ASC_LEVELS.some((lv, i) => state.level >= lv && (state.asc || [])[i] == null);
+}
+function renderClass(body) {
+  const cls = CLASS_BY_ID[state.cls];
+  const asc = ASCENDANCY[state.cls];
+  const set = SETS[state.cls];
+  const n = setCounts(state.gear)[state.cls] || 0;
+  const classSkills = SKILLS.filter((s) => s.cls === state.cls);
+  body.innerHTML = `
+    <div class="panel class-hero" style="--c:${cls.color}"><div class="ci">${cls.icon}</div>
+      <div><b>${cls.name}</b><div class="muted">${cls.desc}</div></div></div>
+    <div class="panel"><h2>Class Passives</h2>
+      <p class="muted" style="font-size:12px;margin-top:0">At levels ${ASC_LEVELS.join(', ')} choose one of two passives. Your first pick is free; changing costs 🪙${fmt(ascRespecCost(state.level))}.</p>
+      ${asc.map((opts, i) => `<div class="ms ${state.level >= ASC_LEVELS[i] ? '' : 'locked'}"><div class="ms-h">Level ${ASC_LEVELS[i]}${state.level >= ASC_LEVELS[i] ? '' : ' 🔒'}</div>
+        <div class="ms-opts">${opts.map((o, j) => {
+          const on = state.asc[i] === j;
+          return `<div class="ms-opt ${on ? 'on' : ''}" ${state.level >= ASC_LEVELS[i] && !on ? `data-act="asc-pick" data-i="${i}" data-o="${j}"` : ''}><b>${o.name}</b><small>${o.desc}</small></div>`;
+        }).join('')}</div></div>`).join('')}
+    </div>
+    <div class="panel"><h2>Weapon Mastery</h2>
+      <div style="font-size:13px">${CLASS_WEAPONS[state.cls].map((k) => `${WICONS[k]} ${k}`).join(' · ')}</div>
+      <div class="muted" style="font-size:12px">${Math.round(WEAPON_MASTERY * 100)}% more damage while wielding one. ${state.gear.weapon ? (isClassWeapon(state, state.gear.weapon) ? '<span class="good">Active</span>' : '<span class="bad">Not active</span>') : ''}</div></div>
+    <div class="panel"><h2>Class Set</h2>
+      <div><b class="rset">${set.name}</b> <span class="muted">${n}/5 equipped</span></div>
+      <div class="muted" style="font-size:12px;margin:4px 0">${SET_SLOTS.map((t) => `${TYPE_ICONS[t]} ${set.prefix} ${t}`).join(' · ')}</div>
+      ${[2, 3, 5].map((t) => `<div class="${n >= t ? 'good' : 'muted'}" style="font-size:13px">(${t}) ${set.text[t]}</div>`).join('')}
+      <div class="muted" style="font-size:11px;margin-top:6px">Set pieces drop from zone bosses (stage 20+), dungeon Wardens and raid bosses.</div></div>
+    <div class="panel"><h2>Class Skills</h2>
+      ${classSkills.map((sk) => `<div class="row"><span>${sk.icon} <b>${sk.name}</b> <span class="muted">Lv ${sk.unlock}</span></span>
+        <span class="${state.skills.ranks[sk.id] ? 'good' : 'muted'}">${state.skills.ranks[sk.id] ? 'Unlocked' : 'Locked'}</span></div>`).join('')}
+      <button class="btn small" style="width:100%;margin-top:6px" data-act="sub" data-s="skills">Manage skills</button></div>`;
 }
 
 // ---------- Endgame: dungeons & raids ----------
@@ -592,6 +641,17 @@ function doAction(el) {
       break;
     }
     case 'skill-open': openSkill(el.dataset.id); return;
+    case 'asc-pick': {
+      const i = +el.dataset.i, o = +el.dataset.o;
+      if (state.asc[i] != null) {
+        const c = ascRespecCost(state.level);
+        if (state.gold < c) { toast('Not enough gold'); return; }
+        if (!confirm(`Change class passive for 🪙${fmt(c)}?`)) return;
+        state.gold -= c;
+      }
+      state.asc[i] = o; state.pushBlocked = false;
+      toast(`${CLASS_BY_ID[state.cls].icon} ${ASCENDANCY[state.cls][i][o].name}!`); break;
+    }
     case 'mod-pick': {
       const id = el.dataset.id, i = +el.dataset.i, o = +el.dataset.o;
       const picks = state.skills.mods[id] || (state.skills.mods[id] = []);
@@ -617,7 +677,9 @@ function doAction(el) {
         if (state.gold < c) return;
         state.gold -= c;
       }
-      state.cls = id; state.tree = []; resetView(); modalCtx = null; closeModal();
+      state.cls = id; state.tree = []; state.asc = []; resetView(); modalCtx = null; closeModal();
+      state.skills.bar = state.skills.bar.map((s) => (s && SKILL_BY_ID[s].cls && SKILL_BY_ID[s].cls !== id ? null : s));
+      syncSkills(state);
       toast(`${CLASS_BY_ID[id].icon} You are a ${CLASS_BY_ID[id].name}`); break;
     }
     case 'change-class': openClassPicker(true); return;
@@ -678,8 +740,8 @@ function frame(now) {
       case 'level': toast(`⭐ Level ${e.level}! +1 passive point`); structural = true; battleFull = true; break;
       case 'stage': structural = true; battleFull = true; if (isBossStage(e.stage)) toast(`👑 Boss: ${zoneFor(e.stage).bossName}`); break;
       case 'death': toast('☠️ You died. Falling back a stage.'); structural = true; battleFull = true; break;
-      case 'equip': toast(`▲ <span class="${rc(e.item.rarity)}">${e.item.name}</span> <span class="good">+${(e.gain * 100).toFixed(1)}%</span>`); structural = true; break;
-      case 'loot': if (e.item.rarity >= 3) toast(`<span class="${rc(e.item.rarity)}">${RARITIES[e.item.rarity].name}: ${e.item.name}</span>`); structural = true; break;
+      case 'equip': toast(`▲ <span class="${nc(e.item)}">${e.item.name}</span> <span class="good">+${(e.gain * 100).toFixed(1)}%</span>`); structural = true; break;
+      case 'loot': if (e.item.rarity >= 3 || e.item.set) toast(`<span class="${nc(e.item)}">${e.item.set ? 'Set' : e.item.mythic ? '✦ Mythic' : RARITIES[e.item.rarity].name}: ${e.item.name}</span>`); structural = true; break;
       case 'kill': if (tab === 'battle') renderFeed(); break;
     }
   }

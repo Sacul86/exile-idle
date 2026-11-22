@@ -1,10 +1,11 @@
 import { S, SLOTS, resistPenalty, physShare, isBossStage } from './data.js';
 import { treeBonuses } from './tree.js';
+import { classBonuses, isClassWeapon, WEAPON_MASTERY } from './classdata.js';
 import { itemStats } from './items.js';
 
 export const RESIST_CAP = 75;
 // Monsters outscale gear slightly, so tiers/crafting/passives matter.
-export let MONSTER_EXP = +(globalThis.process?.env?.MEXP || 1.4);
+export let MONSTER_EXP = +(globalThis.process?.env?.MEXP || 1.45);
 
 // Monster template for a stage (used for both combat and gear scoring)
 export function monsterFor(stage, elite = false, kind = null) {
@@ -31,6 +32,7 @@ export function computeStats(state, gear = state.gear) {
   }
   const tb = treeBonuses(state);
   for (const [k, v] of Object.entries(tb.stats)) add(k, v);
+  for (const [k, v] of Object.entries(classBonuses(state, gear))) add(k, v);
   const ks = tb.keystones;
   const g = (k) => t[k] || 0;
   const hasWeapon = !!gear.weapon;
@@ -39,6 +41,9 @@ export function computeStats(state, gear = state.gear) {
   if (ks.has('resolute')) more *= 1.45;
   if (ks.has('glass')) more *= 1.6;
   if (ks.has('overload')) eleMore *= 1.3;
+  more *= 1 + g('moreDmg') / 100;
+  const mastery = isClassWeapon(state, gear.weapon);
+  if (mastery) more *= 1 + WEAPON_MASTERY;
   const convert = ks.has('overload') ? 1 : Math.min(1, g('convert'));
   const physMinRaw = (hasWeapon ? g('w_physMin') : 2) + g('addPhysMin');
   const physMaxRaw = (hasWeapon ? g('w_physMax') : 4) + g('addPhysMax');
@@ -51,6 +56,9 @@ export function computeStats(state, gear = state.gear) {
   if (ks.has('acrobatics')) { evaMore = 1.3; armMore = 0.5; }
   const st = {
     keystones: ks,
+    mastery,
+    cdr: Math.min(60, g('cdr')),
+    skillPow: g('skillPow'),
     physMin: physMinRaw * (1 - convert) * physMult,
     physMax: physMaxRaw * (1 - convert) * physMult,
     eleMin: (g('addEleMin') + physMinRaw * convert) * eleMult,
@@ -62,11 +70,12 @@ export function computeStats(state, gear = state.gear) {
     maxLife: (50 + 14 * (state.level - 1) + g('life')) * (1 + g('incLife') / 100) * (ks.has('glass') ? 0.5 : 1),
     armour: armour * (1 + incArm / 100) * armMore,
     evasion: evasion * (1 + incEva / 100) * evaMore,
-    evadeCap: ks.has('acrobatics') ? 0.85 : 0.7,
-    resistCap: RESIST_CAP + (ks.has('bulwark') ? 10 : 0),
+    evadeCap: Math.min(0.9, (ks.has('acrobatics') ? 0.85 : 0.7) + g('evadeCap') / 100),
+    resistCap: Math.min(90, RESIST_CAP + (ks.has('bulwark') ? 10 : 0) + g('maxRes')),
     resistRaw: g('resist'),
     block: gear.offhand ? Math.min(60, g('block')) : 0,
     lifeOnHit: g('lifeOnHit'),
+    lifeOnHitPct: g('lifeOnHitPct'),
     leech: Math.min(30, g('leech') * (ks.has('vaalPact') ? 3 : 1)),
     goldFind: g('goldFind'),
     rarity: g('rarity'),
@@ -88,12 +97,13 @@ export function computeStats(state, gear = state.gear) {
     (mon.physShare * (1 - st.armourRed) + (1 - mon.physShare) * (1 - resRed));
   st.damageTakenMult = Math.max(0.02, taken);
   st.ehp = st.maxLife / st.damageTakenMult;
-  const sustain = st.regen + st.lifeOnHit * st.aps + st.dps * st.leech / 100;
+  const sustain = st.regen + (st.lifeOnHit + st.maxLife * st.lifeOnHitPct / 100) * st.aps + st.dps * st.leech / 100;
   st.sustain = sustain;
   // Power: geometric mean of offence and (sustain-adjusted) defence
   const ehpS = st.ehp + (sustain * 8) / st.damageTakenMult;
   const util = 1 + st.goldFind * 0.0005 + st.rarity * 0.001 + st.xpGain * 0.001;
-  st.power = Math.sqrt(st.dps * ehpS) * util;
+  const skillF = (1 + st.skillPow / 100 * 0.35) * (1 + st.cdr / 100 * 0.3);
+  st.power = Math.sqrt(st.dps * skillF * ehpS) * util;
   return st;
 }
 

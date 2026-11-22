@@ -277,6 +277,41 @@ export class Arena {
         this.burst(px, py, '#5cc46b', 20, 90, 3, 1, -120); this.num(px, py - 50, '+heal', '#5cc46b', 13); break;
       case 'molten':
         this.ring(px, py, '#ff8a2b', 50, 46, 0.4, 6); break;
+      case 'divshield':
+        this.ring(px, py, '#fff3b0', 56, 48, 0.5, 7); this.burst(px, py, '#fff3b0', 16, 80, 2.5, 0.8, -60); break;
+      case 'arc':
+        for (let i = 0; i < 3; i++) this.fx.push({ k: 'bolt', x0: px + 20, y0: py - 10, x1: mx + rand(-14, 14), y1: my + rand(-20, 20), life: 0.25, age: -i * 0.07, c: '#9ad8ff' });
+        this.burst(mx, my, '#bfe8ff', 14, 160, 2.5, 0.4, 0); break;
+      case 'storm':
+        for (let i = 0; i < 8; i++) this.fx.push({ k: 'bolt', x0: mx + rand(-60, 60), y0: -10, x1: mx + rand(-20, 20), y1: my + rand(-10, 20), life: 0.2, age: -i * 0.09, c: i % 2 ? '#9ad8ff' : '#d8a0ff' });
+        this.flash = { c: '#9ad8ff', t: 0.2, a: 0.15 }; this.shake = Math.max(this.shake, 4); break;
+      case 'shadowstrike':
+        this.p.evade = 0.3;
+        this.fx.push({ k: 'slash', x: mx, y: my, a: 0.8, life: 0.3, age: 0.05, c: '#b46bff', r: 46, wide: true });
+        this.fx.push({ k: 'slash', x: mx, y: my, a: -0.8, life: 0.3, age: -0.08, c: '#e0c0ff', r: 40 });
+        this.burst(mx, my, '#7a3bd0', 18, 140, 3, 0.5, 0); break;
+      case 'smoke':
+        for (let i = 0; i < 18; i++) this.parts.push({ x: px + rand(-30, 30), y: py + rand(-10, 30), vx: rand(-20, 20), vy: rand(-40, -10), c: '#8a8a9a', s: rand(6, 12), life: 1.2, age: 0, g: 0 });
+        break;
+      case 'rain':
+        for (let i = 0; i < 7; i++) this.fx.push({ k: 'proj', x0: mx + rand(-50, 50) - 40, y0: -20, x1: mx + rand(-16, 16), y1: my + rand(-10, 20), life: 0.3, age: -i * 0.06, c: '#c8d0a0', c2: '#ffffff', r: 3, onHit: () => this.burst(mx, my, '#e8e0c0', 4, 90, 2, 0.3, 200) });
+        break;
+      case 'mark':
+        this.fx.push({ k: 'mark', x: mx, y: my, life: 1.2, age: 0 });
+        this.fx.push({ k: 'proj', x0: px + 20, y0: py - 6, x1: mx, y1: my, life: 0.2, age: 0, c: '#ff4a3a', c2: '#ffd0a0', r: 4 }); break;
+      case 'riposte':
+        this.fx.push({ k: 'slash', x: mx, y: my, a: 0.3, life: 0.28, age: 0, c: '#ffffff', r: 48, wide: true });
+        this.burst(px, py, '#5cc46b', 10, 70, 2.5, 0.8, -100); this.shake = Math.max(this.shake, 3); break;
+      case 'bloodrush':
+        this.ring(px, py, '#c8352f', 10, 80, 0.5, 6); this.burst(px, py, '#ff3b3b', 20, 120, 3, 0.8, -50); break;
+      case 'quake':
+        this.ring(mx, gy - 2, '#a07040', 10, 160, 0.6, 8); this.ring(mx, gy - 2, '#ffb04a', 6, 100, 0.45, 4);
+        this.burst(mx, gy, '#7a5a3a', 30, 220, 4, 0.9, 500); this.shake = 12; break;
+      case 'berserk':
+        this.ring(px, py, '#ff2020', 8, 110, 0.5, 8); this.flash = { c: '#ff2020', t: 0.25, a: 0.2 }; this.shake = Math.max(this.shake, 6); break;
+      case 'smite':
+        this.fx.push({ k: 'beam', x: mx, c: '#fff3b0', life: 0.6, age: 0, big: true });
+        this.burst(mx, my, '#fff3b0', 24, 200, 3, 0.6, 50); this.burst(px, py, '#5cc46b', 8, 60, 2, 0.8, -100); break;
     }
   }
 
@@ -316,8 +351,10 @@ export class Arena {
     // buffs aura
     if (c.buffs && c.buffs.dmg) this.aura(px, gy - 34, '#ff4a3a', 44);
     if (c.buffs && c.buffs.aps) this.aura(px, gy - 34, '#ffe36b', 40);
+    if (c.buffs && c.buffs.leech) this.aura(px, gy - 34, '#c8352f', 42);
+    if (c.buffs && c.buffs.evade) { x.globalAlpha = 0.5; }
     if (this.p.evade > 0) { x.globalAlpha = 0.3; this.drawSprite(pIcon, pSize, px - 18, gy - 34 + pBob, false, 0); x.globalAlpha = 1; }
-    x.globalAlpha = pDead ? 0.25 : 1;
+    x.globalAlpha = pDead ? 0.25 : (c.buffs && c.buffs.evade ? 0.55 : 1);
     this.drawSprite(pIcon, pSize, px + pLunge + (this.p.evade > 0 ? 10 : 0), gy - 34 + pBob, false, this.p.hit > 0 ? 0.8 : 0);
     x.globalAlpha = 1;
     if (c.shield && c.shield.v > 0) {
@@ -342,7 +379,9 @@ export class Arena {
     x.translate(mxp, my + mBob); x.scale(sc, sc);
     this.drawSprite(m.icon, ms, 0, 0, true, this.m.hit > 0 ? 0.85 : 0);
     x.restore();
-    if (m.frozen > 0) {
+    if (m.frozen > 0 && m.stunned) {
+      for (let i = 0; i < 3; i++) { const a = this.t * 4 + i * 2.1; x.font = '14px serif'; x.fillText('⭐', mxp + Math.cos(a) * 24, my - ms * 0.5 + Math.sin(a) * 6); }
+    } else if (m.frozen > 0) {
       x.fillStyle = 'rgba(150,220,255,0.28)';
       x.beginPath(); x.arc(mxp, my, ms * 0.55, 0, 7); x.fill();
       x.strokeStyle = 'rgba(200,240,255,0.7)'; x.lineWidth = 2; x.stroke();
@@ -474,6 +513,25 @@ export class Arena {
         x.globalAlpha = a * 0.5; x.beginPath(); x.ellipse(f.x, this.gy, bw * 2.5, bw * 0.6, 0, 0, 7); x.fillStyle = f.c; x.fill();
         if (f.big && Math.random() < 0.5) this.parts.push({ x: f.x + rand(-bw, bw), y: this.gy - rand(0, 20), vx: 0, vy: -rand(40, 120), c: f.c, s: 2, life: 0.8, age: 0, g: 0 });
         x.globalAlpha = 1; x.globalCompositeOperation = 'source-over'; break;
+      }
+      case 'bolt': {
+        x.save(); x.globalCompositeOperation = 'lighter'; x.globalAlpha = 1 - k;
+        x.strokeStyle = f.c; x.lineWidth = 3; x.shadowColor = f.c; x.shadowBlur = 10;
+        x.beginPath(); x.moveTo(f.x0, f.y0);
+        const segs = 7;
+        for (let i = 1; i <= segs; i++) {
+          const t = i / segs;
+          x.lineTo(f.x0 + (f.x1 - f.x0) * t + (i < segs ? rand(-12, 12) : 0), f.y0 + (f.y1 - f.y0) * t + (i < segs ? rand(-12, 12) : 0));
+        }
+        x.stroke(); x.restore(); break;
+      }
+      case 'mark': {
+        x.globalAlpha = (1 - k) * 0.9; x.strokeStyle = '#ff4a3a'; x.lineWidth = 2.5;
+        const r = 30 + Math.sin(k * 20) * 2;
+        x.beginPath(); x.arc(f.x, f.y, r, 0, 7); x.stroke();
+        x.beginPath(); x.moveTo(f.x - r - 8, f.y); x.lineTo(f.x - r + 8, f.y); x.moveTo(f.x + r - 8, f.y); x.lineTo(f.x + r + 8, f.y);
+        x.moveTo(f.x, f.y - r - 8); x.lineTo(f.x, f.y - r + 8); x.moveTo(f.x, f.y + r - 8); x.lineTo(f.x, f.y + r + 8); x.stroke();
+        x.globalAlpha = 1; break;
       }
       case 'warn': {
         x.globalAlpha = 1 - k; x.fillStyle = '#ff2a2a';

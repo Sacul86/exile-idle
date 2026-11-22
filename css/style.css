@@ -332,3 +332,18 @@ h2 { font-weight: 800; letter-spacing: .06em; text-transform: uppercase; font-si
 /* Class picker */
 .class-card { background: linear-gradient(180deg, color-mix(in srgb, var(--c) 18%, #1b1612), #15110d); box-shadow: 0 2px 8px #000a; }
 .class-card .ci { filter: drop-shadow(0 3px 6px #000); }
+/* Sets, mythics, class */
+.rset { color: #3fd16b; }
+.bcset { border-color: #2a8a4a !important; box-shadow: 0 0 8px #3fd16b44; }
+.cell.bcset { background: radial-gradient(circle at 50% 40%, #1a4a2a, #0e1e14); }
+.slot.bcset { background: linear-gradient(180deg, #13301e, #17130f); }
+.set-box, .set-sum { font-size: 12px; text-align: left; margin-top: 4px; }
+.set-sum { border-top: 1px solid var(--line); padding-top: 6px; margin-top: 8px; }
+.mythic-pow { text-align: center; color: #ff8aa0; font-size: 13px; }
+.mythic-pow .mp-h { font-family: var(--font-head); color: var(--r5); font-weight: 800; letter-spacing: .08em; font-size: 12px; margin-bottom: 2px; text-shadow: 0 0 8px #ff3b5c88; }
+.cls-tag { font-size: 9px; background: #8a6a33; color: #fff3d0; border-radius: 4px; padding: 0 4px; vertical-align: middle; }
+.class-hero { display: flex; gap: 12px; align-items: center; border-top: 3px solid var(--c); }
+.class-hero .ci { font-size: 44px; filter: drop-shadow(0 3px 6px #000); }
+.class-hero b { font-family: var(--font-head); font-size: 20px; color: var(--c); }
+.class-hero .muted { font-size: 12px; }
+.seg button { font-size: 12px; padding: 7px 4px; }

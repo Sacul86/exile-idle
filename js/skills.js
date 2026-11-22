@@ -13,6 +13,19 @@ export const SKILLS = [
   { id: 'haste',    name: 'Haste',          icon: '⚡', unlock: 40, cd: 16, kind: 'buff',   stat: 'aps', power: 0.4, dur: 6, desc: '+{p}% Attack Speed for {d}s.' },
   { id: 'meteor',   name: 'Meteor',         icon: '🌠', unlock: 60, cd: 15, kind: 'hit',    power: 9, ele: true, desc: 'Deal {p}% of your hit damage. Double effect from Elemental damage.' },
   { id: 'undying',  name: 'Undying Rage',   icon: '😤', unlock: 80, cd: 30, kind: 'buff',   stat: 'dmg', power: 1.0, dur: 5, desc: '+{p}% more Damage for {d}s.' },
+  // ---- Class skills ----
+  { id: 'arc',       cls: 'witch',    name: 'Arc',             icon: '🌩️', unlock: 12, cd: 5,  kind: 'hit', power: 1.3, hits: 3, ele: true, fx: 'arc', desc: 'Lightning chains for 3 hits of {p}% hit damage. Double effect from Elemental damage.' },
+  { id: 'storm',     cls: 'witch',    name: 'Elemental Storm', icon: '🌪️', unlock: 35, cd: 14, kind: 'hit', power: 0.9, hits: 8, ele: true, fx: 'storm', desc: 'A storm strikes 8 times for {p}% hit damage. Double effect from Elemental damage.' },
+  { id: 'shadowstrike', cls: 'shadow', name: 'Shadow Strike',  icon: '🗡️', unlock: 12, cd: 6,  kind: 'hit', power: 3.5, alwaysCrit: 1, fx: 'shadow', desc: 'Teleport behind the enemy for {p}% hit damage. Always a Critical Strike.' },
+  { id: 'smoke',     cls: 'shadow',   name: 'Smoke Bomb',      icon: '💨', unlock: 35, cd: 16, kind: 'buff', buffs: { evade: 0.25, dmg: 0.2 }, power: 1, dur: 5, desc: '+{e}% chance to Evade and +{m}% more Damage for {d}s.' },
+  { id: 'rain',      cls: 'ranger',   name: 'Rain of Arrows',  icon: '🏹', unlock: 12, cd: 7,  kind: 'hit', power: 0.8, hits: 7, fx: 'rain', desc: 'Arrows rain down: 7 hits of {p}% hit damage.' },
+  { id: 'mark',      cls: 'ranger',   name: "Hunter's Mark",   icon: '🎯', unlock: 35, cd: 12, kind: 'hit', power: 1.5, baseExpose: 0.3, exposeDur: 6, fx: 'mark', desc: 'Deal {p}% hit damage and mark the enemy: it takes 30% more damage from you for 6s.' },
+  { id: 'riposte',   cls: 'duelist',  name: 'Riposte',         icon: '⚔️', unlock: 12, cd: 6,  kind: 'hit', power: 3, baseHeal: 0.06, fx: 'riposte', desc: 'Counter for {p}% hit damage and heal 6% of max Life.' },
+  { id: 'bloodrush', cls: 'duelist',  name: 'Blood Rush',      icon: '🩸', unlock: 35, cd: 18, kind: 'buff', buffs: { leech: 4, aps: 0.25 }, power: 1, dur: 6, desc: '+{l}% Life Leech and +{a}% Attack Speed for {d}s.' },
+  { id: 'quake',     cls: 'marauder', name: 'Earthquake',      icon: '🌋', unlock: 12, cd: 12, kind: 'freeze', power: 4, dur: 1.5, stun: true, fx: 'quake', desc: 'Slam the ground for {p}% hit damage and Stun for {d}s.' },
+  { id: 'berserk',   cls: 'marauder', name: 'Berserk',         icon: '😡', unlock: 35, cd: 20, kind: 'buff', buffs: { dmg: 0.5, aps: 0.25 }, power: 1, dur: 6, desc: '+{m}% more Damage and +{a}% Attack Speed for {d}s.' },
+  { id: 'smite',     cls: 'templar',  name: 'Holy Smite',      icon: '✨', unlock: 12, cd: 6,  kind: 'hit', power: 2.8, ele: true, baseHeal: 0.08, fx: 'smite', desc: 'Call down holy light for {p}% hit damage and heal 8% of max Life. Double effect from Elemental damage.' },
+  { id: 'divshield', cls: 'templar',  name: 'Divine Shield',   icon: '🛡️', unlock: 35, cd: 20, kind: 'shield', power: 0.6, dur: 6, desc: 'Absorb damage equal to {p}% of max Life for {d}s.' },
 ];
 export const SKILL_BY_ID = Object.fromEntries(SKILLS.map((s) => [s.id, s]));
 export const MAX_SKILL_RANK = 20;
@@ -33,7 +46,8 @@ export function skillDesc(sk, rank) {
   return sk.desc.replace('{p}', pct).replace('{d}', sk.dur) + ` Cooldown ${skillCd(sk, rank).toFixed(1)}s.`;
 }
 
-export const unlockedSkills = (level) => SKILLS.filter((s) => level >= s.unlock);
+export const unlockedSkills = (level, cls) => SKILLS.filter((s) => level >= s.unlock && (!s.cls || s.cls === cls));
+export const skillsFor = (cls) => SKILLS.filter((s) => !s.cls || s.cls === cls);
 
 // ---- Skill upgrades: at ranks 5, 10 and 15 choose one of two modifiers ----
 export const MILESTONES = [5, 10, 15];
@@ -93,8 +107,11 @@ export function skillEffective(sk, rank, picks = []) {
       if (k === 'thresh') e.thresh = v; else e[k] += v;
     }
   });
+  e.heal += sk.baseHeal || 0;
+  if (sk.baseExpose) { e.expose += sk.baseExpose; e.exposeDur = Math.max(e.exposeDur, sk.exposeDur); }
   return {
     ...e,
+    alwaysCrit: !!sk.alwaysCrit,
     power: skillPower(sk, rank) * (1 + e.pow),
     cooldown: skillCd(sk, rank) * (1 - Math.min(0.6, e.cd)),
     duration: (sk.dur || 0) * (1 + e.dur) + e.durFlat,
@@ -106,5 +123,9 @@ export function skillEffective(sk, rank, picks = []) {
 export function skillDescFull(sk, rank, picks) {
   const ef = skillEffective(sk, rank, picks);
   const p = Math.round(ef.power * 100);
-  return sk.desc.replace('{p}', p).replace('{d}', +ef.duration.toFixed(1)) + ` Cooldown ${ef.cooldown.toFixed(1)}s.`;
+  const b = sk.buffs || {};
+  const pct = (v) => Math.round(v * ef.power * 100);
+  return sk.desc.replace('{p}', p).replace('{d}', +ef.duration.toFixed(1))
+    .replace('{e}', pct(b.evade || 0)).replace('{m}', pct(b.dmg || 0)).replace('{a}', pct(b.aps || 0)).replace('{l}', +((b.leech || 0) * ef.power).toFixed(1))
+    + ` Cooldown ${ef.cooldown.toFixed(1)}s.`;
 }

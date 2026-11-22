@@ -12,6 +12,7 @@ for (let m = 0; m < hours * 60; m += 5) {
   const r = simulate(s, 300);
   if (spend) {
     autoAllocate(s);
+    s.asc = [0, 0, 0];
     for (let k = 0; k < 30; k++) {
       let best = null, bc = null;
       for (const it of Object.values(s.gear)) { if (!it || !canUpgrade(it)) continue; const c = upgradeCost(it); if (c.gold <= s.gold && c.shards <= s.shards && (!bc || c.gold < bc.gold)) { best = it; bc = c; } }
