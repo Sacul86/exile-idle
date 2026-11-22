@@ -55,42 +55,42 @@ export const KEYSTONES = {
   glass:      { name: 'Glass Cannon',       icon: '💎', lines: ['50% less maximum Life', '60% more Damage'] },
 };
 
-// Per-class branches: [left, middle(keystone), right]
+// Per-class themes: [left wheel, spine (keystone), right wheel]. Each has two notables.
 const BRANCHES = {
   witch: [
-    { small: { incEle: 6 }, notable: ['Arcane Potency', { incEle: 20, critChance: 15 }] },
-    { small: { resist: 3 }, notable: ['Elemental Ward', { resist: 10, incLife: 6 }], keystone: 'overload' },
-    { small: { regenPct: 0.15 }, notable: ['Soul Siphon', { regenPct: 0.5, incLife: 8 }] },
+    { small: { incEle: 5 }, notable: ['Arcane Potency', { incEle: 18, critChance: 15 }], notable2: ['Elemental Mastery', { incEle: 15, incAll: 6 }] },
+    { small: { resist: 3 }, notable: ['Elemental Ward', { resist: 10, incLife: 6 }], notable2: ['Prismatic Skin', { resist: 8, incLife: 5, incEle: 6 }], keystone: 'overload' },
+    { small: { regenPct: 0.12 }, notable: ['Soul Siphon', { regenPct: 0.5, incLife: 8 }], notable2: ['Fountain of Life', { regenPct: 0.6, incLife: 4 }] },
   ],
   shadow: [
-    { small: { incEle: 4, critChance: 4 }, notable: ['Toxic Edge', { incEle: 15, critMulti: 10 }] },
-    { small: { critMulti: 5 }, notable: ['Deadly Precision', { critMulti: 20, critChance: 15 }], keystone: 'assassin' },
-    { small: { critChance: 8 }, notable: ['Assassinate', { critChance: 30, aps: 4 }] },
+    { small: { incEle: 3, critChance: 4 }, notable: ['Toxic Edge', { incEle: 15, critMulti: 10 }], notable2: ['Venom Strike', { incEle: 12, critChance: 12 }] },
+    { small: { critMulti: 4 }, notable: ['Deadly Precision', { critMulti: 18, critChance: 15 }], notable2: ['Executioner', { critMulti: 25 }], keystone: 'assassin' },
+    { small: { critChance: 7 }, notable: ['Assassinate', { critChance: 30, aps: 4 }], notable2: ['Shadow Dance', { critChance: 20, incEvasion: 10 }] },
   ],
   ranger: [
-    { small: { critChance: 6, aps: 1 }, notable: ['Eagle Eye', { critChance: 25, critMulti: 10 }] },
-    { small: { incEvasion: 8 }, notable: ['Fleet Footed', { incEvasion: 25, aps: 4 }], keystone: 'acrobatics' },
-    { small: { aps: 2 }, notable: ['Rapid Assault', { aps: 8, incPhys: 8 }] },
+    { small: { critChance: 5, aps: 1 }, notable: ['Eagle Eye', { critChance: 25, critMulti: 10 }], notable2: ['Marksman', { critChance: 20, critMulti: 12 }] },
+    { small: { incEvasion: 7 }, notable: ['Fleet Footed', { incEvasion: 25, aps: 4 }], notable2: ['Wind Walker', { incEvasion: 20, aps: 5 }], keystone: 'acrobatics' },
+    { small: { aps: 2 }, notable: ['Rapid Assault', { aps: 8, incPhys: 8 }], notable2: ['Quickdraw', { aps: 10 }] },
   ],
   duelist: [
-    { small: { incPhys: 4, aps: 1 }, notable: ['Blade Dancer', { incPhys: 12, aps: 6 }] },
-    { small: { incArmour: 5, incEvasion: 5 }, notable: ['Duellist\'s Guard', { incArmour: 15, incEvasion: 15, block: 4 }], keystone: 'ironRefl' },
-    { small: { leech: 0.3 }, notable: ['Bloodthirst', { leech: 1, incPhys: 10 }] },
+    { small: { incPhys: 4, aps: 1 }, notable: ['Blade Dancer', { incPhys: 12, aps: 6 }], notable2: ['Swordmaster', { incPhys: 15, aps: 4 }] },
+    { small: { incArmour: 5, incEvasion: 5 }, notable: ['Duellist\'s Guard', { incArmour: 15, incEvasion: 15, block: 4 }], notable2: ['Steel Dancer', { incArmour: 12, incEvasion: 12, incLife: 4 }], keystone: 'ironRefl' },
+    { small: { leech: 0.25 }, notable: ['Bloodthirst', { leech: 1, incPhys: 10 }], notable2: ['Crimson Dance', { leech: 1.2, aps: 3 }] },
   ],
   marauder: [
-    { small: { incArmour: 8 }, notable: ['Iron Skin', { incArmour: 25, resist: 6 }] },
-    { small: { incPhys: 6 }, notable: ['Brute Force', { incPhys: 18, incAll: 6 }], keystone: 'resolute' },
-    { small: { incLife: 4 }, notable: ['Thick Skin', { incLife: 10, regenPct: 0.3 }] },
+    { small: { incArmour: 7 }, notable: ['Iron Skin', { incArmour: 25, resist: 6 }], notable2: ['Juggernaut', { incArmour: 20, incLife: 5 }] },
+    { small: { incPhys: 5 }, notable: ['Brute Force', { incPhys: 18, incAll: 6 }], notable2: ['Skull Cracker', { incPhys: 20, critMulti: 10 }], keystone: 'resolute' },
+    { small: { incLife: 3 }, notable: ['Thick Skin', { incLife: 10, regenPct: 0.3 }], notable2: ['Bloodline', { incLife: 12 }] },
   ],
   templar: [
-    { small: { resist: 2, incLife: 2 }, notable: ['Sanctuary', { resist: 8, incLife: 8 }] },
-    { small: { incEle: 3, incArmour: 4 }, notable: ['Holy Might', { incEle: 12, incArmour: 15 }], keystone: 'bulwark' },
-    { small: { block: 1 }, notable: ['Bastion', { block: 6, incArmour: 15 }] },
+    { small: { resist: 2, incLife: 2 }, notable: ['Sanctuary', { resist: 8, incLife: 8 }], notable2: ['Holy Ward', { resist: 10, incArmour: 8 }] },
+    { small: { incEle: 3, incArmour: 4 }, notable: ['Holy Might', { incEle: 12, incArmour: 15 }], notable2: ['Righteous Fire', { incEle: 15, regenPct: 0.3 }], keystone: 'bulwark' },
+    { small: { block: 1 }, notable: ['Bastion', { block: 6, incArmour: 15 }], notable2: ['Shield Wall', { block: 5, incLife: 6 }] },
   ],
 };
 const INNER_UTIL = [{ goldFind: 6 }, { rarity: 5 }, { xpGain: 4 }];
-// Outer-ring notables between sector i and i+1 (indexed by first sector)
-const OUTER_NOTABLES = [
+// Bridge notables between sector i and i+1, linking their wheels mid-tree
+const BRIDGE_NOTABLES = [
   ['Arcane Assassin', { incEle: 10, critChance: 15 }],   // witch-shadow
   ['Hunter\'s Gambit', { critChance: 15, aps: 5 }],      // shadow-ranger
   ['Wind Blade', { aps: 6, incPhys: 10 }],               // ranger-duelist
@@ -98,7 +98,7 @@ const OUTER_NOTABLES = [
   ['Unbreakable', { incArmour: 20, incLife: 8 }],        // marauder-templar
   ['Divine Fury', { incEle: 12, resist: 6 }],            // templar-witch
 ];
-// Extra keystones on spurs off the outer ring
+// Extra keystones on the outer ring between sectors
 const OUTER_KEYSTONES = { 3: 'vaalPact', 0: 'glass' };
 
 const merge = (a, b) => {
@@ -109,57 +109,96 @@ const merge = (a, b) => {
 const quarter = (s) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, +(v * 0.25).toFixed(3)]));
 const halve = (s) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, +(v * 0.6).toFixed(2)]));
 
+// Layout: each class owns a 60° sector containing
+//   a fan of 3 entry nodes, two "wheels" (ring of 6 + notable centre) with
+//   several entrances, a spine with a notable, an outer arc that ties it all
+//   together, side spurs with notables, and a notable cluster guarding the keystone.
+// Sectors are joined by an inner ring, bridge notables between wheels, and an outer ring.
 function buildTree() {
   const nodes = {};
   const edges = [];
   const rad = (d) => (d * Math.PI) / 180;
   const pos = (ang, r) => ({ x: +(Math.cos(rad(ang)) * r).toFixed(1), y: +(Math.sin(rad(ang)) * r).toFixed(1) });
   const add = (id, n) => { nodes[id] = { id, ...n, adj: [] }; return id; };
-  const link = (a, b) => { nodes[a].adj.push(b); nodes[b].adj.push(a); edges.push([a, b]); };
+  const link = (a, b) => {
+    if (nodes[a].adj.includes(b)) return;
+    nodes[a].adj.push(b); nodes[b].adj.push(a); edges.push([a, b]);
+  };
+  const small = (id, stats, cls, p) => add(id, { kind: 'small', stats, cls, ...p });
+  const notable = (id, [name, stats], cls, p) => add(id, { kind: 'notable', name, stats, cls, ...p });
+  const nearest = (ids, p) => ids.reduce((best, id) => {
+    const d = Math.hypot(nodes[id].x - p.x, nodes[id].y - p.y);
+    return d < best.d ? { id, d } : best;
+  }, { id: null, d: Infinity }).id;
 
-  const RADII = [150, 195, 240, 290, 335, 380];
-  CLASSES.forEach((c, ci) => {
-    const start = add(`start_${c.id}`, { kind: 'start', cls: c.id, name: c.name, icon: c.icon, stats: quarter(c.bonus), ...pos(c.angle, 90) });
-    BRANCHES[c.id].forEach((b, bi) => {
-      const ang = c.angle + (bi - 1) * 18;
-      let prev = start;
-      RADII.forEach((r, ri) => {
-        const id = `${c.id}_${bi}_${ri}`;
-        const notable = ri === 3;
-        add(id, notable
-          ? { kind: 'notable', name: b.notable[0], stats: b.notable[1], cls: c.id, ...pos(ang, r) }
-          : { kind: 'small', stats: b.small, cls: c.id, ...pos(ang, r) });
-        link(prev, id);
-        prev = id;
-      });
-      if (b.keystone) {
-        const k = add(`ks_${b.keystone}`, { kind: 'keystone', keystone: b.keystone, name: KEYSTONES[b.keystone].name, icon: KEYSTONES[b.keystone].icon, stats: {}, cls: c.id, ...pos(ang, 440) });
-        link(prev, k);
+  const wheels = {}; // `${cls}_${0|2}` -> ring ids
+  CLASSES.forEach((c) => {
+    const th = c.angle, B = BRANCHES[c.id], id = (k) => `${c.id}_${k}`;
+    const start = add(`start_${c.id}`, { kind: 'start', cls: c.id, name: c.name, icon: c.icon, stats: quarter(c.bonus), ...pos(th, 90) });
+    // entry fan
+    const f = [0, 1, 2].map((i) => small(id(`f${i}`), B[i].small, c.id, pos(th + (i - 1) * 15, 150)));
+    f.forEach((n) => link(start, n));
+    link(f[0], f[1]); link(f[1], f[2]);
+    // wheels
+    [0, 2].forEach((bi) => {
+      const ctr = pos(th + (bi - 1) * 15, 255);
+      const centre = notable(id(`w${bi}c`), B[bi].notable, c.id, ctr);
+      const ring = [];
+      for (let k = 0; k < 6; k++) {
+        const a = rad(k * 60 + th);
+        ring.push(small(id(`w${bi}_${k}`), B[bi].small, c.id, { x: +(ctr.x + Math.cos(a) * 40).toFixed(1), y: +(ctr.y + Math.sin(a) * 40).toFixed(1) }));
       }
+      ring.forEach((n, k) => link(n, ring[(k + 1) % 6]));
+      // centre reachable from the innermost and outermost ring nodes
+      link(centre, ring[3]); link(centre, ring[0]);
+      link(f[bi], nearest(ring, nodes[f[bi]]));
+      wheels[`${c.id}_${bi}`] = ring;
     });
+    // spine
+    const s1 = small(id('s1'), B[1].small, c.id, pos(th, 212));
+    const s2 = notable(id('s2'), B[1].notable, c.id, pos(th, 292));
+    link(f[1], s1); link(s1, s2);
+    link(s1, nearest(wheels[`${c.id}_0`], nodes[s1])); link(s1, nearest(wheels[`${c.id}_2`], nodes[s1]));
+    // outer arc
+    const arcTheme = [0, 0, 1, 2, 2];
+    const arc = [-22, -11, 0, 11, 22].map((d, i) => small(id(`a${i}`), arcTheme[i] === 1 ? B[1].small : halve(merge(B[arcTheme[i]].small, B[1].small)), c.id, pos(th + d, 350)));
+    arc.forEach((n, i) => i && link(arc[i - 1], n));
+    link(s2, arc[2]);
+    link(nearest(wheels[`${c.id}_0`], nodes[arc[1]]), arc[1]);
+    link(nearest(wheels[`${c.id}_2`], nodes[arc[3]]), arc[3]);
+    // side spur notables
+    link(arc[0], notable(id('sp0'), B[0].notable2, c.id, pos(th - 25, 405)));
+    link(arc[4], notable(id('sp2'), B[2].notable2, c.id, pos(th + 25, 405)));
+    // keystone cluster
+    const na = small(id('ka'), B[1].small, c.id, pos(th - 7, 398));
+    const nb = small(id('kb'), B[1].small, c.id, pos(th + 7, 398));
+    const nt = notable(id('kn'), B[1].notable2, c.id, pos(th, 432));
+    link(arc[2], na); link(arc[2], nb); link(na, nt); link(nb, nt);
+    const ks = B[1].keystone;
+    link(nt, add(`ks_${ks}`, { kind: 'keystone', keystone: ks, name: KEYSTONES[ks].name, icon: KEYSTONES[ks].icon, stats: {}, cls: c.id, ...pos(th, 485) }));
   });
-  // Inner ring between class starts
+
   CLASSES.forEach((c, ci) => {
     const n = CLASSES[(ci + 1) % CLASSES.length];
-    const a = `start_${c.id}`, b = `start_${n.id}`;
-    const i1 = add(`inner_${ci}_0`, { kind: 'small', stats: INNER_UTIL[ci % 3], ...pos(c.angle + 20, 112) });
-    const i2 = add(`inner_${ci}_1`, { kind: 'small', stats: INNER_UTIL[(ci + 1) % 3], ...pos(c.angle + 40, 112) });
-    link(a, i1); link(i1, i2); link(i2, b);
-  });
-  // Outer ring between neighbouring sectors' outer branch ends
-  CLASSES.forEach((c, ci) => {
-    const n = CLASSES[(ci + 1) % CLASSES.length];
-    const from = `${c.id}_2_5`, to = `${n.id}_0_5`;
-    const sA = BRANCHES[c.id][2].small, sB = BRANCHES[n.id][0].small;
-    const o1 = add(`outer_${ci}_0`, { kind: 'small', stats: halve(merge(sA, sB)), ...pos(c.angle + 26, 395) });
-    const [nm, st] = OUTER_NOTABLES[ci];
-    const o2 = add(`outer_${ci}_1`, { kind: 'notable', name: nm, stats: st, ...pos(c.angle + 30, 405) });
-    const o3 = add(`outer_${ci}_2`, { kind: 'small', stats: halve(merge(sA, sB)), ...pos(c.angle + 34, 395) });
-    link(from, o1); link(o1, o2); link(o2, o3); link(o3, to);
+    const th = c.angle;
+    // inner ring between class starts
+    const i1 = small(`inner_${ci}_0`, INNER_UTIL[ci % 3], null, pos(th + 20, 112));
+    const i2 = small(`inner_${ci}_1`, INNER_UTIL[(ci + 1) % 3], null, pos(th + 40, 112));
+    link(`start_${c.id}`, i1); link(i1, i2); link(i2, `start_${n.id}`);
+    // bridge notable between this sector's right wheel and the next sector's left wheel
+    const bp = pos(th + 30, 292);
+    const br = notable(`bridge_${ci}`, BRIDGE_NOTABLES[ci], null, bp);
+    link(br, nearest(wheels[`${c.id}_2`], bp));
+    link(br, nearest(wheels[`${n.id}_0`], bp));
+    // outer ring
+    const stats = halve(merge(BRANCHES[c.id][2].small, BRANCHES[n.id][0].small));
+    const o = small(`outer_${ci}`, stats, null, pos(th + 30, 355));
+    link(`${c.id}_a4`, o); link(o, `${n.id}_a0`);
     const ks = OUTER_KEYSTONES[ci];
     if (ks) {
-      const k = add(`ks_${ks}`, { kind: 'keystone', keystone: ks, name: KEYSTONES[ks].name, icon: KEYSTONES[ks].icon, stats: {}, ...pos(c.angle + 30, 465) });
-      link(o2, k);
+      const k1 = small(`outer_${ci}_k`, stats, null, pos(th + 30, 420));
+      link(o, k1);
+      link(k1, add(`ks_${ks}`, { kind: 'keystone', keystone: ks, name: KEYSTONES[ks].name, icon: KEYSTONES[ks].icon, stats: {}, ...pos(th + 30, 478) }));
     }
   });
   return { nodes, edges };

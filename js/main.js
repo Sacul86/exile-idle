@@ -8,7 +8,7 @@ import {
   CLASSES, CLASS_BY_ID, NODES, KEYSTONES, treePointsFree, treePointsTotal, isAllocatable, pathTo, canRefund,
   nodeLines, refundCost, resetCost, allocatedSet,
 } from './tree.js';
-import { SKILLS, SKILL_BY_ID, skillSlots, skillDesc, skillCd, skillUpgradeCost, MAX_SKILL_RANK } from './skills.js';
+import { SKILLS, SKILL_BY_ID, skillSlots, skillUpgradeCost, MAX_SKILL_RANK, MILESTONES, skillMods, skillEffective, skillDescFull, respecModCost } from './skills.js';
 import { renderTreeSvg, zoom, centerOn, getSelected, setSelected, resetView } from './treeview.js';
 import {
   newState, load, save, tick, ensureCombat, refreshStats, simulate, salvage, equipFromBag, unequip, BAG_SIZE, SAVE_KEY,
@@ -144,7 +144,7 @@ function updateBattle() {
   }
   document.querySelectorAll('.cd[data-cd]').forEach((el) => {
     const id = el.dataset.cd, sk = SKILL_BY_ID[id];
-    const tot = skillCd(sk, state.skills.ranks[id] || 1), left = Math.max(0, c.cds[id] ?? tot);
+    const tot = skillEffective(sk, state.skills.ranks[id] || 1, state.skills.mods[id]).cooldown, left = Math.max(0, c.cds[id] ?? tot);
     el.style.setProperty('--p', (100 * left / tot).toFixed(1) + '%');
   });
   $('#p-shield').textContent = c.shield ? `🔶${fmt(c.shield.v)}` : '';
@@ -371,7 +371,7 @@ function renderSkills(body) {
   const slots = skillSlots(state.level);
   const bar = Array.from({ length: 4 }, (_, i) => state.skills.bar[i]);
   body.innerHTML = `
-    <p class="muted" style="font-size:12px;margin-top:0">Skills cast themselves on cooldown. Tap a slot, then pick a skill. Slots: 2 → 3 at Lv 20 → 4 at Lv 50.</p>
+    <p class="muted" style="font-size:12px;margin-top:0">Skills cast themselves on cooldown. Tap a slot, then pick a skill. Tap a skill to upgrade it: at ranks 5, 10 and 15 you choose one of two upgrades. Slots: 2 → 3 at Lv 20 → 4 at Lv 50.</p>
     <div class="skillbar big">${bar.map((id, i) => i >= slots
       ? `<div class="sk locked">🔒<small>Lv ${i === 2 ? 20 : 50}</small></div>`
       : `<div class="sk ${skillPick === i ? 'picking' : ''}" data-act="pick-slot" data-i="${i}">${id ? `<span>${SKILL_BY_ID[id].icon}</span><small>${state.skills.ranks[id]}</small>` : '+'}</div>`).join('')}</div>
@@ -381,12 +381,39 @@ function renderSkills(body) {
       if (!rank) return `<div class="node locked"><div class="ic">${sk.icon}</div><div class="info"><b>${sk.name}</b><div>Unlocks at level ${sk.unlock}</div></div></div>`;
       const c = skillUpgradeCost(rank, state.level);
       const inBar = state.skills.bar.slice(0, slots).includes(sk.id);
-      return `<div class="node ${inBar ? 'inbar' : ''}" ${skillPick != null ? `data-act="assign" data-id="${sk.id}"` : ''}>
+      const picks = state.skills.mods[sk.id] || [];
+      const pending = MILESTONES.some((m, i) => rank >= m && picks[i] == null);
+      const pips = MILESTONES.map((m, i) => `<span class="pip ${picks[i] != null && rank >= m ? 'on' : rank >= m ? 'ready' : ''}"></span>`).join('');
+      return `<div class="node ${inBar ? 'inbar' : ''}" data-act="${skillPick != null ? 'assign' : 'skill-open'}" data-id="${sk.id}">
         <div class="ic">${sk.icon}</div>
-        <div class="info"><b>${sk.name} <span class="muted">R${rank}</span>${inBar ? ' <span class="good">●</span>' : ''}</b><div>${skillDesc(sk, rank)}</div></div>
+        <div class="info"><b>${sk.name} <span class="muted">R${rank}</span>${inBar ? ' <span class="good">●</span>' : ''} <span class="pips">${pips}</span>${pending ? ' <span class="newmod">NEW</span>' : ''}</b><div>${skillDescFull(sk, rank, picks)}</div></div>
         ${skillPick == null ? `<button class="btn small primary" data-act="skill-up" data-id="${sk.id}" ${rank < MAX_SKILL_RANK && costOk(c) ? '' : 'disabled'}>⬆️<small style="display:block;font-size:9px">${rank < MAX_SKILL_RANK ? `💠${fmt(c.shards)}` : 'MAX'}</small></button>` : ''}
       </div>`;
     }).join('')}`;
+}
+
+function openSkill(id) {
+  const sk = SKILL_BY_ID[id], rank = state.skills.ranks[id];
+  const picks = state.skills.mods[id] || [];
+  const c = skillUpgradeCost(rank, state.level);
+  const mods = skillMods(sk);
+  const card = $('#modal-card');
+  card.innerHTML = `
+    <div class="item-head"><div class="nm">${sk.icon} ${sk.name}</div><div class="meta">Rank ${rank}/${MAX_SKILL_RANK} · each rank +10% effect, −2% cooldown</div></div>
+    <div class="lines"><div class="imp">${skillDescFull(sk, rank, picks)}</div></div>
+    <button class="btn primary" style="width:100%" data-act="skill-up" data-id="${id}" ${rank < MAX_SKILL_RANK && costOk(c) ? '' : 'disabled'}>
+      ⬆️ Rank up${rank < MAX_SKILL_RANK ? ` · ${costText(c)}` : ' (max)'}</button>
+    <h2 style="margin-top:14px">Upgrades</h2>
+    ${MILESTONES.map((m, i) => `<div class="ms ${rank >= m ? '' : 'locked'}"><div class="ms-h">Rank ${m}${rank >= m ? '' : ' 🔒'}</div>
+      <div class="ms-opts">${mods[i].map((o, j) => {
+        const chosen = picks[i] === j;
+        return `<div class="ms-opt ${chosen ? 'on' : ''}" ${rank >= m && !chosen ? `data-act="mod-pick" data-id="${id}" data-i="${i}" data-o="${j}"` : ''}>
+          <b>${o.name}</b><small>${o.desc}</small></div>`;
+      }).join('')}</div></div>`).join('')}
+    <p class="muted" style="font-size:11px">Your first choice at each rank is free. Changing it later costs 💠${respecModCost(rank).shards}.</p>
+    <button class="btn full" style="width:100%" data-act="close">Close</button>`;
+  modalCtx = { skill: id };
+  $('#modal').classList.remove('hidden');
 }
 
 // ---------- Endgame: dungeons & raids ----------
@@ -579,7 +606,21 @@ function doAction(el) {
     case 'skill-up': {
       const id = el.dataset.id, rank = state.skills.ranks[id], c = skillUpgradeCost(rank, state.level);
       if (rank >= MAX_SKILL_RANK || !costOk(c)) return;
-      state.gold -= c.gold; state.shards -= c.shards; state.skills.ranks[id]++; state.pushBlocked = false; break;
+      state.gold -= c.gold; state.shards -= c.shards; state.skills.ranks[id]++; state.pushBlocked = false;
+      if (MILESTONES.includes(state.skills.ranks[id])) toast(`✨ ${SKILL_BY_ID[id].name}: choose an upgrade!`);
+      if (m && m.skill) { afterChange(); openSkill(id); return; }
+      break;
+    }
+    case 'skill-open': openSkill(el.dataset.id); return;
+    case 'mod-pick': {
+      const id = el.dataset.id, i = +el.dataset.i, o = +el.dataset.o;
+      const picks = state.skills.mods[id] || (state.skills.mods[id] = []);
+      if (picks[i] != null) {
+        const c = respecModCost(state.skills.ranks[id]);
+        if (state.shards < c.shards) { toast('Not enough 💠'); return; }
+        state.shards -= c.shards;
+      }
+      picks[i] = o; afterChange(); openSkill(id); return;
     }
     case 'goto-skills': tab = 'build'; buildSub = 'skills'; syncTabs(); break;
     case 'tab-battle': tab = 'battle'; syncTabs(); break;
@@ -715,6 +756,7 @@ window.addEventListener('pagehide', () => save(state));
 
 render();
 if (!state.cls) openClassPicker(false); else offlineCatchUp();
+if (state.treeReset) { delete state.treeReset; setTimeout(() => toast('🌳 The passive tree was redesigned. All points refunded!'), 800); }
 requestAnimationFrame(frame);
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {

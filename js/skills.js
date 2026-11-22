@@ -34,3 +34,77 @@ export function skillDesc(sk, rank) {
 }
 
 export const unlockedSkills = (level) => SKILLS.filter((s) => level >= s.unlock);
+
+// ---- Skill upgrades: at ranks 5, 10 and 15 choose one of two modifiers ----
+export const MILESTONES = [5, 10, 15];
+const MODS = {
+  hit: [
+    [{ id: 'pow', name: 'Added Power', desc: '+40% damage', e: { pow: 0.4 } },
+     { id: 'cd', name: 'Faster Casting', desc: '25% shorter cooldown', e: { cd: 0.25 } }],
+    [{ id: 'critm', name: 'Brutal Crits', desc: '+75% Crit Multiplier for this skill', e: { critm: 75 } },
+     { id: 'siphon', name: 'Siphon', desc: 'Heal for 10% of the damage dealt', e: { leech: 10 } }],
+    [{ id: 'echo', name: 'Echo', desc: 'Casts twice', e: { twice: 1 } },
+     { id: 'expose', name: 'Expose', desc: 'Enemy takes 25% more damage from you for 5s', e: { expose: 0.25, exposeDur: 5 } }],
+  ],
+  buff: [
+    [{ id: 'empower', name: 'Empower', desc: '+40% effect', e: { pow: 0.4 } },
+     { id: 'extend', name: 'Extend', desc: '+60% duration', e: { dur: 0.6 } }],
+    [{ id: 'cd', name: 'Swift Recovery', desc: '25% shorter cooldown', e: { cd: 0.25 } },
+     { id: 'rally', name: 'Rally', desc: 'Also heals 15% of max Life', e: { heal: 0.15 } }],
+    [{ id: 'overcharge', name: 'Overcharge', desc: '+60% effect', e: { pow: 0.6 } },
+     { id: 'perma', name: 'Permanence', desc: '+100% duration', e: { dur: 1 } }],
+  ],
+  heal: [
+    [{ id: 'greater', name: 'Greater Heal', desc: '+40% healing', e: { pow: 0.4 } },
+     { id: 'cd', name: 'Quick Hands', desc: '25% shorter cooldown', e: { cd: 0.25 } }],
+    [{ id: 'early', name: 'Early Trigger', desc: 'Triggers below 80% Life instead of 60%', e: { thresh: 0.8 } },
+     { id: 'retaliate', name: 'Retaliation', desc: '+30% more Damage for 4s after healing', e: { dmgBuff: 0.3 } }],
+    [{ id: 'overheal', name: 'Overheal', desc: 'Also grants a shield of 20% max Life', e: { shield: 0.2 } },
+     { id: 'secondwind', name: 'Second Wind', desc: '40% shorter cooldown', e: { cd: 0.4 } }],
+  ],
+  shield: [
+    [{ id: 'thick', name: 'Thick Shell', desc: '+40% absorb', e: { pow: 0.4 } },
+     { id: 'extend', name: 'Lasting Shell', desc: '+60% duration', e: { dur: 0.6 } }],
+    [{ id: 'cd', name: 'Quick Shell', desc: '25% shorter cooldown', e: { cd: 0.25 } },
+     { id: 'fury', name: 'Molten Fury', desc: '+25% more Damage while shielded', e: { shieldDmg: 0.25 } }],
+    [{ id: 'bastion', name: 'Bastion', desc: '+60% absorb', e: { pow: 0.6 } },
+     { id: 'phoenix', name: 'Phoenix', desc: 'Also heals 15% of max Life', e: { heal: 0.15 } }],
+  ],
+  freeze: [
+    [{ id: 'deep', name: 'Deep Freeze', desc: '+1.5s Freeze duration', e: { durFlat: 1.5 } },
+     { id: 'shatter', name: 'Shatter', desc: '+60% damage', e: { pow: 0.6 } }],
+    [{ id: 'cd', name: 'Cold Snap', desc: '25% shorter cooldown', e: { cd: 0.25 } },
+     { id: 'brittle', name: 'Brittle', desc: 'Frozen enemies take 30% more damage from you', e: { brittle: 0.3 } }],
+    [{ id: 'echo', name: 'Glacial Echo', desc: 'Casts twice', e: { twice: 1 } },
+     { id: 'perma', name: 'Permafrost', desc: 'Bosses are frozen for the full duration', e: { bossFull: 1 } }],
+  ],
+};
+export const skillMods = (sk) => MODS[sk.kind];
+export const respecModCost = (rank) => ({ shards: Math.ceil(30 * rank), gold: 0 });
+
+// Combined effect of rank + chosen modifiers
+export function skillEffective(sk, rank, picks = []) {
+  const e = { pow: 0, cd: 0, dur: 0, durFlat: 0, critm: 0, leech: 0, twice: 0, expose: 0, exposeDur: 0, heal: 0, thresh: 0.6, dmgBuff: 0, shield: 0, shieldDmg: 0, brittle: 0, bossFull: 0 };
+  MILESTONES.forEach((m, i) => {
+    const pick = picks[i];
+    if (pick == null || rank < m) return;
+    const mod = MODS[sk.kind][i][pick];
+    for (const [k, v] of Object.entries(mod.e)) {
+      if (k === 'thresh') e.thresh = v; else e[k] += v;
+    }
+  });
+  return {
+    ...e,
+    power: skillPower(sk, rank) * (1 + e.pow),
+    cooldown: skillCd(sk, rank) * (1 - Math.min(0.6, e.cd)),
+    duration: (sk.dur || 0) * (1 + e.dur) + e.durFlat,
+    hits: (sk.hits || 1),
+    casts: 1 + e.twice,
+  };
+}
+
+export function skillDescFull(sk, rank, picks) {
+  const ef = skillEffective(sk, rank, picks);
+  const p = Math.round(ef.power * 100);
+  return sk.desc.replace('{p}', p).replace('{d}', +ef.duration.toFixed(1)) + ` Cooldown ${ef.cooldown.toFixed(1)}s.`;
+}

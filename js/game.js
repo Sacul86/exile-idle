@@ -2,7 +2,7 @@
 import { S, SLOTS, MONSTERS_PER_STAGE, isBossStage, zoneFor, ZONES, RARITIES, STAGES_PER_ZONE } from './data.js';
 import { generateItem, salvageValue } from './items.js';
 import { NODES, isAllocatable, pathTo, treePointsFree, allocatedSet } from './tree.js';
-import { SKILL_BY_ID, skillCd, skillPower, skillSlots, unlockedSkills } from './skills.js';
+import { SKILL_BY_ID, skillSlots, unlockedSkills, skillEffective } from './skills.js';
 import { computeStats, monsterFor, evaluateItem, xpToNext, evadeChance, armourReduction, combatLevel } from './stats.js';
 
 export const SAVE_KEY = 'exile-idle-save-v1';
@@ -11,11 +11,11 @@ export const BAG_SIZE = 60;
 export function newState() {
   const gear = Object.fromEntries(SLOTS.map((s) => [s.id, null]));
   const st = {
-    version: 2,
+    version: 2, treeVersion: 2,
     level: 1, xp: 0, gold: 0, shards: 0, keys: 0, sigils: 0,
     stage: 1, maxStage: 1, kills: 0, totalKills: 0, deaths: 0,
     gear, bag: [], cls: null, tree: [],
-    skills: { ranks: { cleave: 1 }, bar: ['cleave'] },
+    skills: { ranks: { cleave: 1 }, bar: ['cleave'], mods: {} },
     bossesBeaten: {}, dungeonsCleared: {}, raidsCleared: {},
     run: null,
     settings: { autoAdvance: true, autoEquip: true, autoSalvage: 2, speed: 1 },
@@ -37,7 +37,10 @@ export function load() {
     const base = newState();
     const st = { ...base, ...s, settings: { ...base.settings, ...s.settings } };
     st.skills = s.skills || base.skills;
+    st.skills.mods = st.skills.mods || {};
     syncSkills(st);
+    if (s.treeVersion !== 2) { st.tree = []; st.treeVersion = 2; st.treeReset = (s.tree || []).length > 0; }
+    st.tree = st.tree.filter((id) => NODES[id]);
     delete st.passives; // v1 passives replaced by the skill tree (points refund automatically)
     if (!s.gear) st.gear = base.gear;
     return st;
@@ -160,14 +163,16 @@ export function tick(state, dt, ev) {
   // buffs
   for (const k of Object.keys(c.buffs)) { c.buffs[k].t -= dt; if (c.buffs[k].t <= 0) delete c.buffs[k]; }
   if (c.shield) { c.shield.t -= dt; if (c.shield.t <= 0 || c.shield.v <= 0) c.shield = null; }
-  const dmgBuff = 1 + (c.buffs.dmg ? c.buffs.dmg.v : 0);
+  const dmgBuff = 1 + (c.buffs.dmg ? c.buffs.dmg.v : 0) + (c.shield && c.shield.dmg ? c.shield.dmg : 0);
   const apsBuff = 1 + (c.buffs.aps ? c.buffs.aps.v : 0);
-  const strike = (mult, eleBoost = 1) => {
-    let dmg = (rr(st.physMin, st.physMax) + rr(st.eleMin, st.eleMax) * eleBoost) * mult * dmgBuff;
+  if (m.expose) { m.expose.t -= dt; if (m.expose.t <= 0) m.expose = null; }
+  const strike = (mult, eleBoost = 1, critBonus = 0, leechBonus = 0) => {
+    const exposeMult = 1 + (m.expose ? m.expose.v : 0) + (m.frozen > 0 && m.brittle ? m.brittle : 0);
+    let dmg = (rr(st.physMin, st.physMax) + rr(st.eleMin, st.eleMax) * eleBoost) * mult * dmgBuff * exposeMult;
     const crit = Math.random() * 100 < st.crit;
-    dmg *= crit ? st.critMulti / 100 : st.nonCritMult;
+    dmg *= crit ? (st.critMulti + critBonus) / 100 : st.nonCritMult;
     m.hp -= dmg;
-    c.hp = Math.min(st.maxLife, c.hp + st.lifeOnHit + dmg * st.leech / 100);
+    c.hp = Math.min(st.maxLife, c.hp + st.lifeOnHit + dmg * (st.leech + leechBonus) / 100);
     ev && ev.push({ t: 'hit', dmg, crit, who: 'm' });
   };
 
@@ -181,23 +186,29 @@ export function tick(state, dt, ev) {
   for (const id of bar) {
     if (!id || m.hp <= 0) continue;
     const sk = SKILL_BY_ID[id], rank = state.skills.ranks[id] || 1;
-    c.cds[id] = (c.cds[id] ?? skillCd(sk, rank) * 0.5) - dt;
+    const ef = skillEffective(sk, rank, state.skills.mods[id]);
+    c.cds[id] = (c.cds[id] ?? ef.cooldown * 0.5) - dt;
     if (c.cds[id] > 0) continue;
-    const p = skillPower(sk, rank);
+    const p = ef.power;
     if (sk.kind === 'heal') {
-      if (c.hp > st.maxLife * 0.6) { c.cds[id] = 0; continue; }
+      if (c.hp > st.maxLife * ef.thresh) { c.cds[id] = 0; continue; }
       c.hp = Math.min(st.maxLife, c.hp + st.maxLife * p);
+      if (ef.dmgBuff) c.buffs.dmg = { v: Math.max(ef.dmgBuff, c.buffs.dmg ? c.buffs.dmg.v : 0), t: 4 };
+      if (ef.shield) c.shield = { v: st.maxLife * ef.shield, t: 6, dmg: 0 };
     } else if (sk.kind === 'hit') {
-      for (let i = 0; i < (sk.hits || 1); i++) strike(p, sk.ele ? 2 : 1);
+      for (let n = 0; n < ef.casts; n++) for (let i = 0; i < ef.hits; i++) strike(p, sk.ele ? 2 : 1, ef.critm, ef.leech);
+      if (ef.expose) m.expose = { v: ef.expose, t: ef.exposeDur };
     } else if (sk.kind === 'freeze') {
-      strike(p);
-      m.frozen = sk.dur * (m.boss ? 0.5 : 1);
+      for (let n = 0; n < ef.casts; n++) strike(p);
+      m.frozen = ef.duration * (m.boss && !ef.bossFull ? 0.5 : 1);
+      m.brittle = ef.brittle;
     } else if (sk.kind === 'shield') {
-      c.shield = { v: st.maxLife * p, t: sk.dur };
+      c.shield = { v: st.maxLife * p, t: ef.duration, dmg: ef.shieldDmg };
     } else if (sk.kind === 'buff') {
-      c.buffs[sk.stat] = { v: p, t: sk.dur };
+      c.buffs[sk.stat] = { v: p, t: ef.duration };
     }
-    c.cds[id] = skillCd(sk, rank);
+    if (ef.heal) c.hp = Math.min(st.maxLife, c.hp + st.maxLife * ef.heal);
+    c.cds[id] = ef.cooldown;
     ev && ev.push({ t: 'skill', id });
   }
   if (m.hp <= 0) { onKill(state, m, ev); return; }
