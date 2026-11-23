@@ -1,3 +1,5 @@
 [
-  { "id": "test_mage", "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/ec24074e-057a-4e1c-bcb3-97e2d269de6b.png", "grid": [1, 1], "dir": "test", "names": ["mage"], "size": 384 }
+  { "id": "hero_mage", "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/ec24074e-057a-4e1c-bcb3-97e2d269de6b.png", "grid": [1, 1], "dir": "heroes", "names": ["witch"], "size": 384 },
+  { "id": "heroes_a", "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/16ef5adb-21d6-424b-93d7-044129f6a234.png", "grid": [2, 2], "dir": "heroes", "names": ["marauder", "duelist", "templar", "druid"], "size": 384 },
+  { "id": "heroes_b", "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/6e812c81-77ca-41e4-bebc-3641fa4d8d8f.png", "grid": [2, 1], "dir": "heroes", "names": ["ranger", "shadow"], "size": 384 }
 ]
