@@ -2,6 +2,7 @@
 // campaign / dungeon / raid / world-boss progression, pets.
 import { S, SLOTS, MONSTERS_PER_STAGE, isBossStage, zoneFor, ZONES, RARITIES, STAGES_PER_ZONE } from './data.js';
 import { generateItem, salvageValue } from './items.js';
+import { MYTHICS } from './data.js';
 import { SETS } from './classdata.js';
 import { NODES, pathTo, treePointsFree, allocatedSet, CLASS_BY_ID, ROLE_ORDER, treeSkillIds, socketsInReach } from './tree.js';
 import { SKILL_BY_ID, skillSlots, unlockedSkills, skillEffective, TAG_INFO } from './skills.js';
@@ -168,6 +169,17 @@ export const dungeonLevel = (tier) => tier * STAGES_PER_ZONE + 5;
 export const raidLevel = (tier) => tier * STAGES_PER_ZONE + 8;
 export const dungeonName = (tier) => `Vaults of the ${ZONES[(tier - 1) % ZONES.length].name}`;
 export const raidName = (tier) => `Sanctum of ${ZONES[(tier - 1) % ZONES.length].bossName.replace(/^The /, '')}`;
+// Each vault / raid tier has its own unique loot: specific Mythics and class sets
+const SET_ORDER = ['witch', 'marauder', 'druid', 'shadow', 'templar', 'ranger', 'duelist'];
+export function lootTable(kind, tier) {
+  const n = MYTHICS.length;
+  if (kind === 'raid') return {
+    mythics: [MYTHICS[(tier * 2) % n].id, MYTHICS[(tier * 2 + 1) % n].id],
+    sets: [SET_ORDER[(tier * 2) % 7], SET_ORDER[(tier * 2 + 1) % 7]],
+    mythicChance: 0.12 + tier * 0.005,
+  };
+  return { mythics: [MYTHICS[(tier * 5 + 3) % n].id], sets: [SET_ORDER[tier % 7]], mythicChance: 0.03 };
+}
 export const dungeonTiers = (state) => Math.floor((state.maxStage - 1) / STAGES_PER_ZONE);
 export const raidUnlocked = (state, tier) => (state.dungeonsCleared[tier] || 0) > 0;
 
@@ -178,12 +190,12 @@ export function startRun(state, kind, tier) {
     if (state.keys < 1) return 'You need a 🗝️ Dungeon Key';
     if (tier < 1 || tier > dungeonTiers(state)) return 'Locked';
     state.keys--;
-    state.run = { kind, tier, level: dungeonLevel(tier), room: 1, roomKills: 0, time: 0, timeLimit: DUNGEON.timeLimit };
+    state.run = { kind, tier, level: dungeonLevel(tier), room: 1, roomKills: 0, time: 0, timeLimit: DUNGEON.timeLimit, downs: 0, lootMark: state.lootLog[0] || null, shardsAt: state.shards };
   } else if (kind === 'raid') {
     if (state.sigils < 1) return 'You need a 🔱 Raid Sigil';
     if (!raidUnlocked(state, tier)) return 'Clear this tier\'s dungeon first';
     state.sigils--;
-    state.run = { kind, tier, level: raidLevel(tier), time: 0, timeLimit: RAID.timeLimit, phase: 1 };
+    state.run = { kind, tier, level: raidLevel(tier), time: 0, timeLimit: RAID.timeLimit, phase: 1, downs: 0, lootMark: state.lootLog[0] || null, shardsAt: state.shards };
   } else if (kind === 'invasion') {
     const st = invasionStatus(state);
     const useHorn = !(st.open && !st.used);
@@ -544,6 +556,7 @@ function heroDown(state, i, ev) {
     return;
   }
   h.hp = 0; h.dead = 10; h.shield = null; h.buffs = {};
+  if (state.run) state.run.downs = (state.run.downs || 0) + 1;
   ev && ev.push({ t: 'heroDown', i });
   if (alive(c).length === 0) wipe(state, ev);
 }
@@ -563,14 +576,15 @@ function wipe(state, ev) {
   ev && ev.push({ t: 'death' });
 }
 
-function dropItems(state, n, ilvl, rarityBonus, minRarity, ev, setChance = 0) {
+function dropItems(state, n, ilvl, rarityBonus, minRarity, ev, setChance = 0, setPool = null) {
   const p = state.combat.party;
   const classes = state.heroes.map((h) => h.cls).filter(Boolean);
   for (let i = 0; i < n; i++) {
     const cls = classes[Math.floor(Math.random() * classes.length)];
     if (setChance && Math.random() < setChance) {
       const ids = Object.keys(SETS);
-      const setId = Math.random() < 0.7 && cls ? cls : ids[Math.floor(Math.random() * ids.length)];
+      const setId = setPool && Math.random() < 0.6 ? setPool[Math.floor(Math.random() * setPool.length)]
+        : Math.random() < 0.7 && cls ? cls : ids[Math.floor(Math.random() * ids.length)];
       handleLoot(state, generateItem(ilvl, { set: setId }), ev);
       continue;
     }
@@ -603,8 +617,9 @@ function onKill(state, m, ev) {
   if (run && run.kind === 'invasion') return finishInvasion(state, ev); // (practically never)
   if (m.raid) {
     dropItems(state, 1, lvl + 3, 0, 4, ev);
-    if (Math.random() < 0.1 + run.tier * 0.005) dropItems(state, 1, lvl + 3, 0, 5, ev);
-    dropItems(state, 3, lvl + 3, 300, 3, ev, 0.5);
+    const lt = lootTable('raid', run.tier);
+    if (Math.random() < lt.mythicChance) handleLoot(state, generateItem(lvl + 3, { mythic: lt.mythics[Math.floor(Math.random() * lt.mythics.length)] }), ev);
+    dropItems(state, 3, lvl + 3, 300, 3, ev, 0.5, lt.sets);
     maybeEgg(state, 0.3, ev);
     gainStone(state, lvl, 1, ev);
     if (Math.random() < 0.3) gainStone(state, lvl, 1, ev);
@@ -617,7 +632,9 @@ function onKill(state, m, ev) {
   }
   if (run && run.kind === 'dungeon') {
     if (m.boss) {
-      dropItems(state, 4, lvl + 2, 300, 2, ev, 0.25);
+      const lt = lootTable('dungeon', run.tier);
+      if (Math.random() < lt.mythicChance) handleLoot(state, generateItem(lvl + 2, { mythic: lt.mythics[0] }), ev);
+      dropItems(state, 4, lvl + 2, 300, 2, ev, 0.25, lt.sets);
       maybeEgg(state, 0.1, ev);
       if (Math.random() < 0.6) gainStone(state, lvl, 0, ev);
       const first = !state.dungeonsCleared[run.tier];

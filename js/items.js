@@ -117,6 +117,12 @@ function rollImplicit(type, ilvl, baseIdx, kindName) {
 
 export function generateItem(ilvl, opts = {}) {
   if (opts.set) return generateSetItem(ilvl, opts.set, opts.type);
+  if (opts.mythic && MYTHIC_BY_ID[opts.mythic]) {
+    const m = MYTHIC_BY_ID[opts.mythic];
+    const it = generateItem(ilvl, { ...opts, mythic: null, type: m.type, rarity: 5 });
+    it.mythic = m.id; it.name = m.name;
+    return it;
+  }
   const type = opts.type || pick(ITEM_TYPES);
   const rarity = opts.rarity ?? rollRarity(ilvl, opts.rarityPct || 0, opts.rarityBonus || 0);
   const baseIdx = baseIndexFor(ilvl);
@@ -141,7 +147,7 @@ export function generateItem(ilvl, opts = {}) {
     uid: uid(), type, name, kind, defType, rarity, ilvl, baseIdx, implicit, affixes,
     upgrade: 0, locked: false, isNew: true,
   };
-  if (rarity === 5) {
+  if (rarity === 5 && !opts.noMythic) {
     const pool = MYTHICS.filter((m) => m.type === type);
     if (pool.length) { const m = pick(pool); item.mythic = m.id; item.baseName = name; item.name = m.name; }
   }

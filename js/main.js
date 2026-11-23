@@ -10,6 +10,7 @@ import {
 } from './tree.js';
 import { SKILLS, skillsFor, SKILL_BY_ID, skillSlots, skillUpgradeCost, MAX_SKILL_RANK, MILESTONES, skillMods, skillEffective, skillDescFull, respecModCost, synergyLines, TAG_INFO, STATUS, SKILL_SLOTS } from './skills.js';
 import { Arena } from './fx.js';
+import { predict, RATINGS, rate } from './predict.js';
 import { CLASS_WEAPONS, WEAPON_MASTERY, SETS, SET_SLOTS, setCounts, ASCENDANCY, ASC_LEVELS, ascRespecCost, isClassWeapon } from './classdata.js';
 import { PETS, PET_BY_ID, PET_MAX_LEVEL, petUpgradeCost, bonusText, invasionStatus, worldBossToday, INVASION_TIME, BOX_INFO, SHOP } from './pets.js';
 import { equipBest, bestSkills, bestAscendancy, bestPet, bestStones, optimiseAll, describeResult } from './optimize.js';
@@ -17,10 +18,10 @@ import { renderTreeSvg, zoom, centerOn, getSelected, setSelected, resetView } fr
 import {
   newState, newHero, load, save, tick, ensureCombat, refreshStats, simulate, salvage, equipFromBag, unequip, BAG_SIZE, SAVE_KEY,
   startRun, abandonRun, syncSkills, dungeonTiers, raidUnlocked, dungeonLevel, raidLevel, dungeonName, raidName, DUNGEON,
-  enrageMult, autoAllocate, charOf, partyReady, bestHeroFor, hatchEgg, openBox, buyShop, availableSkills, stoneBoosts,
+  enrageMult, autoAllocate, charOf, partyReady, bestHeroFor, hatchEgg, openBox, buyShop, availableSkills, stoneBoosts, lootTable,
 } from './game.js';
 
-export const VERSION = '2026.11.23-d';
+export const VERSION = '2026.11.23-e';
 let state = load() || newState();
 const arena = new Arena();
 ensureCombat(state);
@@ -118,7 +119,8 @@ function renderBattle() {
       <span>☠️ Too strong here. Farming stage ${state.stage} until your party gets stronger.</span>
       <button class="btn small primary" data-act="push">Push</button>
     </div>
-    <div class="arena" id="arena">
+    <div class="arena ${run ? 'in-run ' + run.kind : ''}" id="arena">
+      ${run ? `<div class="run-banner ${run.kind}"><b>${run.kind === 'raid' ? '🔱 RAID' : run.kind === 'invasion' ? '🐉 WORLD BOSS' : '🗝️ VAULT'}</b><span id="rb-prog"></span><span id="rb-time"></span></div>` : ''}
       <div class="fighter m" id="fm">
         <div class="bar mhp"><div class="trail" id="m-trail"></div><div class="fill" id="m-hp"></div><span id="m-hp-t"></span></div>
         <div class="label" id="m-name"></div>
@@ -164,6 +166,8 @@ function updateBattle() {
     const left = Math.max(0, run.timeLimit - run.time);
     $('#run-time').style.width = (100 * left / run.timeLimit) + '%';
     $('#run-time-t').textContent = `${Math.ceil(left)}s left`;
+    const rp = $('#rb-prog'), rt = $('#rb-time');
+    if (rp) { rp.textContent = $('#run-prog').textContent; rt.textContent = `⏱ ${Math.ceil(left)}s`; rt.classList.toggle('urgent', left < 20); }
   } else {
     const needed = isBossStage(state.stage) ? 1 : MONSTERS_PER_STAGE;
     $('#stage-fill').style.width = (100 * state.kills / needed) + '%';
@@ -570,6 +574,51 @@ function renderPets() {
 }
 
 // ---------- Events: world boss, boxes, shop, dungeons, raids ----------
+function ownedMythics() {
+  const out = new Set();
+  for (const h of state.heroes) for (const it of Object.values(h.gear)) if (it && it.mythic) out.add(it.mythic);
+  for (const it of state.bag) if (it.mythic) out.add(it.mythic);
+  return out;
+}
+function lootLine(kind, t) {
+  const lt = lootTable(kind, t);
+  const own = ownedMythics();
+  return `<div class="loot-line" data-act="loot-info" data-k="${kind}" data-t="${t}">${lt.mythics.map((id) => `<span class="r5">✦ ${MYTHIC_BY_ID[id].name}${own.has(id) ? ' ✓' : ''}</span>`).join(' ')}
+    ${lt.sets.map((c) => `<span class="rset">${CLASS_BY_ID[c].name} set</span>`).join(' ')} <span class="muted">ⓘ</span></div>`;
+}
+function ratingBadge(kind, t) {
+  const p = predict(state, kind, t, false);
+  if (!p) { schedulePredictions(); return `<span class="rating r-wait" id="rate-${kind}-${t}">…</span>`; }
+  const r = RATINGS[p.rating];
+  return `<span class="rating ${r.cls}" id="rate-${kind}-${t}">${r.icon} ${r.label}</span>`;
+}
+let predTimer = null;
+function schedulePredictions() {
+  if (predTimer) return;
+  predTimer = setTimeout(function step() {
+    predTimer = null;
+    const el = document.querySelector('.rating.r-wait');
+    if (!el || tab !== 'events') return;
+    const [, kind, t] = el.id.split('-');
+    const p = predict(state, kind, +t, true);
+    if (p) { const r = RATINGS[p.rating]; el.className = `rating ${r.cls}`; el.textContent = `${r.icon} ${r.label}`; }
+    else { el.className = 'rating'; el.textContent = ''; }
+    if (document.querySelector('.rating.r-wait')) predTimer = setTimeout(step, 30);
+  }, 60);
+}
+function openLootInfo(kind, t) {
+  const lt = lootTable(kind, t);
+  const own = ownedMythics();
+  $('#modal-card').innerHTML = `<h2>${kind === 'raid' ? '🔱 ' + raidName(t) : '🗝️ ' + dungeonName(t)}</h2>
+    <p class="muted" style="font-size:12px;margin-top:0">Unique loot for this ${kind === 'raid' ? 'raid' : 'vault'} (Tier ${t}). Mythic chance per clear: ${Math.round(lt.mythicChance * 100)}%.</p>
+    ${lt.mythics.map((id) => { const m = MYTHIC_BY_ID[id]; return `<div class="panel"><b class="r5">✦ ${m.name}</b> <span class="muted">${SLOTS.find((x) => x.type === m.type).name}</span>${own.has(id) ? ' <span class="good">✓ owned</span>' : ''}
+      ${m.text.map((x) => `<div class="mythic-pow" style="text-align:left">${x}</div>`).join('')}</div>`; }).join('')}
+    ${lt.sets.map((c) => `<div class="panel"><b class="rset">${SETS[c].name}</b> <span class="muted">(${CLASS_BY_ID[c].name})</span>
+      ${[2, 3, 5].map((n) => `<div class="muted" style="font-size:12px">(${n}) ${SETS[c].text[n]}</div>`).join('')}</div>`).join('')}
+    <button class="btn full" style="width:100%" data-act="close">Close</button>`;
+  modalCtx = null;
+  $('#modal').classList.remove('hidden');
+}
 function renderEvents() {
   const inv = invasionStatus(state);
   const wb = worldBossToday();
@@ -578,12 +627,13 @@ function renderEvents() {
   const rows = [];
   for (let t = tiers; t >= 1; t--) {
     const dc = state.dungeonsCleared[t] || 0, rcl = state.raidsCleared[t] || 0;
+    const ru = raidUnlocked(state, t);
     rows.push(`<div class="eg-row">
-      <div class="info"><b>${dungeonName(t)}</b><div class="muted">Tier ${t} · Lv ${dungeonLevel(t)} · cleared ${dc}×</div></div>
+      <div class="info"><b>${dungeonName(t)}</b> ${ratingBadge('dungeon', t)}<div class="muted">Tier ${t} · Lv ${dungeonLevel(t)} · cleared ${dc}×</div>${lootLine('dungeon', t)}</div>
       <button class="btn small primary" data-act="enter" data-k="dungeon" data-t="${t}" ${!run && state.keys > 0 ? '' : 'disabled'}>Enter 🗝️</button></div>
-      <div class="eg-row raid ${raidUnlocked(state, t) ? '' : 'locked'}">
-      <div class="info"><b>🔱 ${raidName(t)}</b><div class="muted">${raidUnlocked(state, t) ? `Raid · Lv ${raidLevel(t)} · cleared ${rcl}×` : 'Clear this tier\'s vault to unlock'}</div></div>
-      <button class="btn small raidbtn" data-act="enter" data-k="raid" data-t="${t}" ${!run && state.sigils > 0 && raidUnlocked(state, t) ? '' : 'disabled'}>Raid 🔱</button></div>`);
+      <div class="eg-row raid ${ru ? '' : 'locked'}">
+      <div class="info"><b>🔱 ${raidName(t)}</b> ${ru ? ratingBadge('raid', t) : ''}<div class="muted">${ru ? `Raid · Lv ${raidLevel(t)} · cleared ${rcl}×` : 'Clear this tier\'s vault to unlock'}</div>${lootLine('raid', t)}</div>
+      <button class="btn small raidbtn" data-act="enter" data-k="raid" data-t="${t}" ${!run && state.sigils > 0 && ru ? '' : 'disabled'}>Raid 🔱</button></div>`);
   }
   const canFight = !run && partyReady(state) && ((inv.open && !inv.used) || state.horns > 0);
   view.innerHTML = `
@@ -826,6 +876,21 @@ function doAction(el) {
       tab = 'battle'; syncTabs();
       toast({ raid: '🔱 Raid started!', dungeon: '🗝️ Vault opened!', invasion: '🐉 The world boss attacks!' }[el.dataset.k]); break;
     }
+    case 'loot-info': openLootInfo(el.dataset.k, +el.dataset.t); return;
+    case 'enter-next': {
+      modalCtx = null; $('#modal').classList.add('hidden');
+      const err = startRun(state, el.dataset.k, +el.dataset.t);
+      if (err) { toast(err); return; }
+      tab = 'battle'; syncTabs(); toast(el.dataset.k === 'raid' ? '🔱 Raid started!' : '🗝️ Vault opened!'); break;
+    }
+    case 'opt-party-modal': {
+      const before = state.combat.party.power;
+      const r = optimiseAll(state);
+      const gain = (state.combat.party.power / before - 1) * 100;
+      toast(`⚡ ${describeResult(r) || 'Already optimal'}${gain > 0.05 ? ` <span class="good">+${gain.toFixed(1)}%</span>` : ''}`);
+      el.disabled = true; el.innerHTML = `✓ Optimised<small>${gain > 0.05 ? '+' + gain.toFixed(1) + '% power' : 'nothing to change'}</small>`;
+      save(state); return;
+    }
     case 'abandon':
       if (state.run && state.run.kind !== 'invasion' && !confirm('Abandon this run? Your key/sigil is lost.')) return;
       abandonRun(state, ev); break;
@@ -933,8 +998,76 @@ function showRunEnd(e) {
     $('#modal').classList.remove('hidden');
     return;
   }
-  const name = e.run.kind === 'raid' ? raidName(e.run.tier) : dungeonName(e.run.tier);
-  toast(e.success ? `🏆 ${name} cleared! ${e.reason}` : `💀 ${name} failed: ${e.reason}`);
+  showRunReport(e);
+}
+function showRunReport(e) {
+  const run = e.run, kind = run.kind, t = run.tier;
+  const name = kind === 'raid' ? raidName(t) : dungeonName(t);
+  const used = Math.min(run.time, run.timeLimit), limit = run.timeLimit;
+  const downs = run.downs || 0;
+  const loot = [];
+  for (const l of state.lootLog) { if (l === run.lootMark) break; loot.push(l); }
+  const rating = rate(e.success, used / limit, downs);
+  const where = kind === 'raid' ? `phase ${run.phase || 1}` : run.room > DUNGEON.rooms ? 'the Warden fight' : `room ${run.room}`;
+  const downTxt = downs ? `, ${downs} hero${downs > 1 ? 'es' : ''} went down` : ', nobody went down';
+  let comment;
+  if (!e.success) comment = e.reason === 'Out of time' ? `Out of time in ${where}. Your party survives but can't deal the damage fast enough.` : `Defeated in ${where} after ${Math.round(used)}s. The enemies hit harder than your party can absorb.`;
+  else comment = {
+    trivial: `Barely a warm-up: cleared in ${Math.round(used)}s of ${limit}s${downTxt}. This tier is beneath you.`,
+    easy: `A comfortable clear in ${Math.round(used)}s${downTxt}.`,
+    fair: `A solid run: ${Math.round(used)}s of ${limit}s${downTxt}.`,
+    hard: `That was close: ${Math.round(used)}s of ${limit}s${downTxt}. Any harder and it would have gone wrong.`,
+  }[rating];
+  // recommendation, using a quick simulation of what's next
+  let advice = '', next = null, again = null;
+  const haveEntry = kind === 'raid' ? state.sigils > 0 : state.keys > 0;
+  const entryName = kind === 'raid' ? '🔱 sigil' : '🗝️ key';
+  if (e.success) {
+    const nt = t + 1;
+    const unlocked = kind === 'raid' ? raidUnlocked(state, nt) : nt <= dungeonTiers(state);
+    if (!unlocked) advice = kind === 'raid' ? `Clear ${dungeonName(nt)} to unlock the next raid.` : `Tier ${nt} unlocks when you beat the stage ${nt * 10} boss in the campaign.`;
+    else {
+      const p = predict(state, kind, nt, true);
+      const r = p ? p.rating : 'deadly';
+      const lab = RATINGS[r];
+      advice = r === 'deadly' ? `Tier ${nt} looks ${lab.icon} too hard right now. Farm this tier or push the campaign, then tap ⚡ Optimise.`
+        : r === 'hard' ? `Tier ${nt} looks ${lab.icon} hard but doable. Optimise first, then go for it.`
+        : `Tier ${nt} looks ${lab.icon} ${lab.label.toLowerCase()}. You're ready, go for it.`;
+      if (haveEntry && r !== 'deadly') next = nt;
+    }
+    if (haveEntry) again = t;
+  } else {
+    // find the highest lower tier that should go well
+    let easier = null;
+    for (let k = t - 1; k >= 1 && !easier; k--) {
+      if (kind === 'raid' && !raidUnlocked(state, k)) continue;
+      const p = predict(state, kind, k, true);
+      if (p && ['easy', 'fair', 'trivial'].includes(p.rating)) easier = k;
+    }
+    advice = easier ? `Farm Tier ${easier} (it looks manageable) and the campaign for gear, then tap ⚡ Optimise before trying again.`
+      : `Farm the campaign for better gear and levels, then tap ⚡ Optimise before trying again.`;
+    if (easier && haveEntry) again = easier;
+  }
+  const R = RATINGS[rating];
+  $('#modal-card').innerHTML = `
+    <div class="report ${e.success ? 'win' : 'lose'}">
+      <div class="rep-title">${e.success ? '🏆 Cleared!' : '💀 Failed'}</div>
+      <div class="rep-name">${kind === 'raid' ? '🔱' : '🗝️'} ${name} <span class="muted">· Tier ${t}</span></div>
+      <div class="rating big ${R.cls}">${R.icon} ${e.success ? R.label : 'Too hard'}</div>
+    </div>
+    <div class="kv panel"><div><b>${Math.round(used)}s</b><small>of ${limit}s</small></div><div><b>${downs}</b><small>Heroes down</small></div><div><b>${loot.length}</b><small>Items</small></div></div>
+    <p class="rep-comment">${comment}</p>
+    <p class="rep-advice">💡 ${advice}</p>
+    ${e.success && e.reason ? `<p class="good" style="font-size:12px;text-align:center">${e.reason}</p>` : ''}
+    ${loot.length ? `<div class="feed">${loot.slice(0, 10).map((l) => `<div><span class="${l.set ? 'rset' : rc(l.rarity)}">${TYPE_ICONS[l.type]} ${l.name}</span><span class="act ${l.action}">${l.action === 'equipped' && l.hero != null ? `→ ${heroName(l.hero)}` : l.action}</span></div>`).join('')}</div>` : ''}
+    <div class="actions">
+      ${next ? `<button class="btn primary full" data-act="enter-next" data-k="${kind}" data-t="${next}">▶ Next: Tier ${next} <small>uses a ${entryName}</small></button>` : ''}
+      ${again ? `<button class="btn" data-act="enter-next" data-k="${kind}" data-t="${again}">↻ Run Tier ${again}<small>uses a ${entryName}</small></button>` : ''}
+      <button class="btn" data-act="opt-party-modal">⚡ Optimise<small>then decide</small></button>
+      <button class="btn ${next || again ? '' : 'full'}" data-act="close">🌾 Farm the campaign<small>back to stage ${state.stage}</small></button>
+    </div>`;
+  modalCtx = null;
+  $('#modal').classList.remove('hidden');
 }
 let battleDirty = false;
 let last = performance.now(), acc = 0, lastSave = Date.now(), dirtyAt = 0, lastRender = 0;
@@ -954,7 +1087,7 @@ function frame(now) {
       case 'egg': toast('🥚 Pet Egg found!'); break;
       case 'stone': toast(`💎 ${e.stone.name} (T${e.stone.tier}, +${e.stone.power}%)`); break;
       case 'phase': toast(`🔱 Phase ${e.phase}!`); break;
-      case 'room': toast(e.room > DUNGEON.rooms ? '💀 The Warden awakens' : `🚪 Room ${e.room}`); break;
+      case 'room': if (e.room > DUNGEON.rooms) toast('💀 The Warden awakens'); break;
       case 'heroDown': toast(`💀 ${heroName(e.i)} is down!`); break;
       case 'phoenix': toast(`🔥 Phoenix revives ${heroName(e.i)}!`); break;
       case 'runEnd': structural = true; battleDirty = true; showRunEnd(e); break;

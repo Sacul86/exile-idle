@@ -26,7 +26,7 @@ A mobile-first auto-battle loot RPG that mixes Path of Exile-style character bui
 
 ## Content
 - 10 zones with painted backgrounds, 30+ monsters and 10 zone bosses (they enrage and slam).
-- **Vaults** (timed dungeons) and 3-phase **raids**.
+- **Vaults** (timed dungeons) and 3-phase **raids**, each tier with its own unique Mythics and class sets. A difficulty rating (Too easy → Too hard) comes from simulating the run with your current party. During a run the arena glows and a banner shows progress and time. Afterwards an end-of-run report gives a verdict and advice (go to the next tier, run again, or farm), based on a simulation of what's next.
 - **World boss invasions** twice a day (12:00 and 20:00 local time): deal as much damage as you can in 90s and earn emblems and Box I/II/III by rank. **Invasion Horns** let you fight outside those times.
 - **Emblem shop:** pet eggs, boxes, keys, sigils, horns.
 - **Pets:** 9 collectable companions that fight alongside you and buff the party (the Phoenix revives fallen heroes). Level them up with shards.

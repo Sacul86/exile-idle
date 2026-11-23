@@ -439,3 +439,32 @@ h2 { font-weight: 800; letter-spacing: .06em; text-transform: uppercase; font-si
 .n.skill circle:not(.hit) { stroke: #3fd16b; stroke-width: 4; fill: #12241a; }
 .n.on.skill circle:not(.hit) { fill: #2f8a4a; stroke: #9affb8; }
 .ni-k.skill { color: #3fd16b; } .ni-k.socket { color: #9ad8ff; }
+/* Ratings, loot lines, run overlay, report */
+.rating { display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 7px; border-radius: 10px; border: 1px solid; vertical-align: middle; white-space: nowrap; }
+.r-wait { color: var(--muted); border-color: #3d3226; }
+.r-trivial { color: #a8a8a8; border-color: #555; background: #2228; }
+.r-easy { color: #7fe08a; border-color: #2f6a3a; background: #13301e; }
+.r-fair { color: #f2d64b; border-color: #8f7d24; background: #2a2512; }
+.r-hard { color: #ffa04a; border-color: #a8591c; background: #33200e; }
+.r-deadly { color: #ff6b5e; border-color: #8f2a24; background: #3a1513; }
+.rating.big { font-size: 14px; padding: 4px 14px; margin-top: 6px; }
+.loot-line { font-size: 10px; margin-top: 3px; line-height: 1.5; }
+.loot-line span { margin-right: 4px; }
+.arena.in-run { animation: runglow 2s ease-in-out infinite; }
+.arena.in-run.dungeon { --rg: #d8a84e; } .arena.in-run.raid { --rg: #ff3bd0; } .arena.in-run.invasion { --rg: #ff4a3a; }
+@keyframes runglow { 0%, 100% { box-shadow: 0 0 0 2px var(--rg), 0 0 12px var(--rg); } 50% { box-shadow: 0 0 0 2px var(--rg), 0 0 26px var(--rg); } }
+.run-banner { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; gap: 10px; align-items: center; justify-content: center; padding: 4px 8px;
+  font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000; background: linear-gradient(90deg, transparent, #000a 20%, #000a 80%, transparent); }
+.run-banner b { font-family: var(--font-head); letter-spacing: .12em; }
+.run-banner.dungeon b { color: #ffd98a; } .run-banner.raid b { color: #ff9ae8; } .run-banner.invasion b { color: #ff9a8a; }
+.run-banner .urgent { color: #ff6b5e; animation: blink 0.6s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .4; } }
+.arena.in-run .fighter.m { top: 30px; }
+.report { text-align: center; padding: 10px; border-radius: 12px; margin-bottom: 10px; }
+.report.win { background: radial-gradient(ellipse at 50% 0%, #4a3a12, #15110d 70%); border: 1px solid #8a6a33; }
+.report.lose { background: radial-gradient(ellipse at 50% 0%, #3a1210, #15110d 70%); border: 1px solid #6e2622; }
+.rep-title { font-family: var(--font-head); font-size: 26px; font-weight: 800; color: var(--gold); }
+.report.lose .rep-title { color: #ff8a7a; }
+.rep-name { font-size: 13px; margin-top: 2px; }
+.rep-comment { font-size: 13px; margin: 6px 0; }
+.rep-advice { font-size: 13px; background: #1d2a3a; border: 1px solid #3a4f6a; border-radius: 8px; padding: 8px; color: #cfe2ff; }
