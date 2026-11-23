@@ -9,11 +9,14 @@ import * as sys from './systems.js';
 import { tick, ensureCombat, setStage, startRun, leaveRun, simulateOffline, refreshStats, runLevel } from './game.js';
 import { optimiseAll } from './optimize.js';
 import { Arena, setSkillNamer, fmtN } from './fx.js';
+import { Scene3D } from './scene3d.js';
 
-const VERSION = '2026.11.23-ea3';
+const VERSION = '2026.11.23-ea4';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const arena = new Arena();
+let scene3d = null;
+const use3D = () => state && state.settings.view !== '2d' && (scene3d || (scene3d = new Scene3D())).ok;
 setSkillNamer((id) => SKILLS[id]?.name || id);
 let state = sys.load();
 let tab = 'battle';
@@ -58,6 +61,7 @@ function sfx(kind) {
 function applySettings() {
   document.documentElement.dataset.text = state.settings.text;
   arena.opt(state.settings);
+  if (scene3d) scene3d.opt(state.settings);
 }
 
 // ---------------- HUD ----------------
@@ -91,7 +95,7 @@ function renderBattle() {
       <div class="stage-ctl"><button class="btn small" data-act="stage" data-d="-1">◀</button><button class="btn small ${state.autoAdvance ? 'toggle on' : 'toggle'}" data-act="auto">Auto ${state.autoAdvance ? 'on' : 'off'}</button><button class="btn small" data-act="stage" data-d="1">▶</button></div></div>`;
   view.innerHTML = `
     <div class="panel tight">${head}<div class="waves" id="waves"></div></div>
-    <div class="arena" id="arena"><div class="bossbar hidden" id="bossbar"><div class="bb-name" id="bb-name"></div><div class="bar boss"><div class="fill" id="bb-fill"></div><span id="bb-text"></span></div><div class="tele hidden" id="tele"><div class="fill" id="tele-fill"></div><span id="tele-text"></span></div></div></div>
+    <div class="arena ${use3D() ? 'iso' : ''}" id="arena"><div class="bossbar hidden" id="bossbar"><div class="bb-name" id="bb-name"></div><div class="bar boss"><div class="fill" id="bb-fill"></div><span id="bb-text"></span></div><div class="tele hidden" id="tele"><div class="fill" id="tele-fill"></div><span id="tele-text"></span></div></div></div>
     <div class="herobars">
       <div class="bar hp"><div class="fill" id="h-hp"></div><div class="shield" id="h-sh"></div><span id="h-hp-t"></span></div>
       <div class="bar res"><div class="fill" id="h-res"></div><span id="h-res-t"></span></div>
@@ -103,7 +107,7 @@ function renderBattle() {
     </div>
     <div class="panel"><h3>Next goals</h3><div id="goals"></div></div>
     <div class="panel"><h3>Recent loot</h3><div id="lootlog" class="lootlog"></div></div>`;
-  arena.mount($('#arena'));
+  if (use3D()) { scene3d.opt(state.settings); scene3d.mount($('#arena')); } else arena.mount($('#arena'));
   refreshGoals(); refreshLootLog();
   battleTick(true);
 }
@@ -373,6 +377,7 @@ function renderSkills() {
       <div class="rule"><span>Use ultimate on</span><select data-act="rule" data-k="ult">${[['boss', 'Bosses only'], ['elite', 'Bosses and elites'], ['always', 'Whenever ready']].map(([v, n]) => `<option value="${v}" ${R.ult === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
       <div class="rule"><span>Target priority</span><select data-act="rule" data-k="target">${[['lowest', 'Lowest life'], ['highest', 'Highest life'], ['elite', 'Bosses/elites first'], ['first', 'Nearest']].map(([v, n]) => `<option value="${v}" ${R.target === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
       <div class="rule"><span>Use AoE skills when at least</span><select data-act="rule" data-k="aoeMin">${[1, 2, 3].map((v) => `<option value="${v}" ${R.aoeMin === v ? 'selected' : ''}>${v} enem${v > 1 ? 'ies' : 'y'}</option>`).join('')}</select></div>
+      <div class="rule"><span>Auto-step out of red danger zones</span><button class="btn small toggle ${R.autoDodge !== false ? 'on' : ''}" data-act="ruleDodge">${R.autoDodge !== false ? 'On' : 'Off'}</button></div>
       <div class="rule"><span>Save shields/dodges for boss telegraphs</span><button class="btn small toggle ${R.saveDef ? 'on' : ''}" data-act="ruleDef">${R.saveDef ? 'On' : 'Off'}</button></div>
       <div class="small muted">Defensive skills that heal fire under the life threshold. Shields, damage reduction and dodges are held for the next ⚠ telegraph when "save" is on (or used at half the threshold in an emergency).</div></div>`;
   }
@@ -439,7 +444,7 @@ function drainEvents() {
   const c = state.combat; if (!c || !c.events.length) return;
   const evs = c.events.splice(0);
   for (const e of evs) {
-    if (tab === 'battle') arena.onEvent(e, state);
+    if (tab === 'battle') { if (use3D()) scene3d.onEvent(e, state); else arena.onEvent(e, state); }
     switch (e.t) {
       case 'loot':
         lootLog.unshift(e); if (lootLog.length > 6) lootLog.pop(); refreshLootLog();
@@ -472,6 +477,7 @@ function drainEvents() {
 // ---------------- tabs & actions ----------------
 function switchTab(t) {
   tab = t;
+  if (state) state.input = null;
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === t);
   render();
   view.scrollTop = 0;
@@ -559,6 +565,7 @@ document.addEventListener('click', (ev) => {
     case 'skUp': if (!sys.upgradeSkill(state, d.id)) toast('Not enough resources'); break;
     case 'skAwk': if (!sys.awakenSkill(state, d.id)) toast('Needs rank 10, level 70 and materials'); break;
     case 'ruleDef': state.rules.saveDef = !state.rules.saveDef; break;
+    case 'ruleDodge': state.rules.autoDodge = state.rules.autoDodge === false; break;
     case 'goRegion': { if (state.run) leaveRun(state); const first = +d.i * 10 + 1; setStage(state, Math.min(state.maxStage, first + 9)); state.autoAdvance = state.maxStage <= first + 9; switchTab('battle'); return; }
     case 'runDungeon': { const t = +document.querySelector(`[data-dtier="${d.k}"]`).value; if (startRun(state, 'dungeon', d.k, t)) switchTab('battle'); return; }
     case 'run': if (startRun(state, d.k)) switchTab('battle'); else toast('Beat a region boss first'); return;
@@ -567,7 +574,7 @@ document.addEventListener('click', (ev) => {
     case 'autoRepeat': state.autoRepeat = !state.autoRepeat; break;
     case 'again': repeatRun(!!d.up); return;
     case 'settings': settingsModal(); return;
-    case 'set': { const k = d.k; const v = d.v; state.settings[k] = v === 'true' ? true : v === 'false' ? false : isNaN(+v) ? v : +v; applySettings(); settingsModal(); return; }
+    case 'set': { const k = d.k; const v = d.v; state.settings[k] = v === 'true' ? true : v === 'false' ? false : isNaN(+v) ? v : +v; applySettings(); settingsModal(); if (k === 'view' && tab === 'battle') renderBattle(); return; }
     case 'export': { const txt = btoa(unescape(encodeURIComponent(JSON.stringify({ ...state, combat: null, _st: null })))); navigator.clipboard?.writeText(txt); prompt('Your save (copied):', txt); return; }
     case 'import': { const txt = prompt('Paste a save:'); if (txt) { try { const s = JSON.parse(decodeURIComponent(escape(atob(txt.trim())))); localStorage.setItem(sys.SAVE_KEY, JSON.stringify(s)); location.reload(); } catch (e) { alert('That save could not be read.'); } } return; }
     case 'newGame': if (confirm('Start a new hero? This erases your current save.')) { resetting = true; localStorage.removeItem(sys.SAVE_KEY); location.reload(); } return;
@@ -594,6 +601,7 @@ function settingsModal() {
   const S = state.settings;
   const opt = (k, list) => `<div class="seg">${list.map(([v, n]) => `<button class="${String(S[k]) === String(v) ? 'on' : ''}" data-act="set" data-k="${k}" data-v="${v}">${n}</button>`).join('')}</div>`;
   modal(`<div class="mhead">Settings</div>
+    <div class="rule"><span>Battle view</span>${opt('view', [['3d', '3D isometric'], ['2d', 'Classic 2D']])}</div>
     <div class="rule"><span>Combat speed</span>${opt('speed', [[1, '1x'], [1.5, '1.5x'], [2, '2x']])}</div>
     <div class="rule"><span>Damage numbers</span>${opt('dmgNums', [['all', 'All'], ['crits', 'Big only'], ['off', 'Off']])}</div>
     <div class="rule"><span>Screen shake</span>${opt('shake', [[true, 'On'], [false, 'Off']])}</div>
@@ -633,8 +641,9 @@ function loop(now) {
     drainEvents();
     if (tab === 'battle') {
       const reg = state.run ? (state.run.kind === 'dungeon' ? DUNGEONS[state.run.key].bg : { caverns: 'caverns', vault: 'pyramid', bossrush: 'raid', tower: 'tower', rift: 'rift' }[state.run.kind]) : REGIONS[regionOf(state.stage)].bg;
-      arena.setScene(reg, state.run ? (state.run.kind === 'rift' ? 'sparkles' : 'embers') : REGIONS[regionOf(state.stage)].weather);
-      arena.resize(); arena.frame(dt, state); battleTick();
+      if (use3D()) { scene3d.resize(); scene3d.frame(dt, state, reg); }
+      else { arena.setScene(reg, state.run ? (state.run.kind === 'rift' ? 'sparkles' : 'embers') : REGIONS[regionOf(state.stage)].weather); arena.resize(); arena.frame(dt, state); }
+      battleTick();
     }
     uiT += dt; if (uiT > 1) { uiT = 0; hud(); if (tab === 'battle') refreshGoals(); }
     saveT += dt; if (saveT > 10) { saveT = 0; saveNow(); }

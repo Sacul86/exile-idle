@@ -18,6 +18,64 @@ const ROLE_ORDER = ['defensive', 'ultimate', 'utility', 'secondary', 'aoe', 'pri
 const hash = (s) => { let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
 const RES_ELEMS = ['fire', 'cold', 'lightning', 'arcane', 'shadow', 'holy', 'poison'];
 
+// ---------------- positions ----------------
+const RANGED_MON = new Set(['skelmage', 'banshee', 'wisp', 'siren', 'cultist', 'harpy', 'imp', 'angel']);
+const HERO_RANGE = { warrior: 1.7, paladin: 1.7, ranger: 7, mage: 7, warlock: 6.5 };
+export const heroRange = (state) => HERO_RANGE[state.cls] || 2;
+export const HERO_SPEED = 4.2;
+const distHE = (c, e) => Math.hypot(e.x - c.hero.x, e.z - c.hero.z);
+const inRange = (state, c, e, extra = 0) => distHE(c, e) - e.r <= heroRange(state) + 0.3 + extra;
+// packs arrive either ahead of you along the path (you run to them) or from all sides
+export function place(c, list, o = {}) {
+  const h = c.hero;
+  const around = o.around ?? Math.random() < 0.45;
+  if (!o.near) c.dir = (c.dir || 0) + rand(-0.8, 0.8);
+  const cx = h.x + Math.cos(c.dir) * 9, cz = h.z + Math.sin(c.dir) * 9;
+  list.forEach((e, i) => {
+    if (e.x !== undefined) return;
+    if (o.near) { const a = rand(0, 6.28); e.x = o.near.x + Math.cos(a) * 2.2; e.z = o.near.z + Math.sin(a) * 2.2; }
+    else if (e.boss || e.vault || !around) { e.x = cx + (e.boss || e.vault ? 0 : rand(-2.5, 2.5)); e.z = cz + (e.boss || e.vault ? 0 : rand(-2.5, 2.5)); }
+    else { const a = (i / list.length) * 6.28 + rand(-0.4, 0.4), d = rand(7, 9.5); e.x = h.x + Math.cos(a) * d; e.z = h.z + Math.sin(a) * d; }
+    e.r = e.boss ? 1.3 : e.elite ? 0.7 : 0.5;
+    e.range = e.boss ? 2.2 : RANGED_MON.has(e.art[1]) ? 5.5 : 1.1;
+    e.speed = e.vault ? 0 : e.boss ? 1.9 : 2.6;
+    e.face = Math.atan2(h.z - e.z, h.x - e.x);
+  });
+}
+function moveStep(state, c, dt, alive) {
+  const h = c.hero, inp = state.input;
+  let dx = 0, dz = 0;
+  h.moving = false; h.manual = false;
+  if (inp && (inp.x || inp.z)) { dx = inp.x; dz = inp.z; h.manual = true; }
+  else {
+    const zone = state.rules.autoDodge !== false && c.zones.find((z) => Math.hypot(h.x - z.x, h.z - z.z) < z.r + 0.5);
+    if (zone) { dx = h.x - zone.x; dz = h.z - zone.z; if (Math.abs(dx) + Math.abs(dz) < 0.01) dx = 1; }
+    else {
+      const t = target(state, c);
+      if (t) {
+        const g = distHE(c, t) - t.r;
+        const close = heroRange(state) > 4 && c.enemies.find((e) => e.hp > 0 && (e.boss || e.elite) && !e.tele && distHE(c, e) - e.r < 2);
+        if (close) { dx = h.x - close.x; dz = h.z - close.z; }   // ranged heroes back off from big melee threats
+        else if (g > heroRange(state) * 0.9) { dx = t.x - h.x; dz = t.z - h.z; } else h.face = Math.atan2(t.z - h.z, t.x - h.x);
+      }
+    }
+  }
+  const l = Math.hypot(dx, dz);
+  if (l > 0.01) { const sp = HERO_SPEED * dt * Math.min(1, l); h.x += (dx / l) * sp; h.z += (dz / l) * sp; h.face = Math.atan2(dz, dx); h.moving = true; }
+  for (const e of alive) {
+    e.moving = false;
+    if (e.frozen > 0 || e.tele || !e.speed) continue;
+    const d = distHE(c, e) || 0.01;
+    e.face = Math.atan2(h.z - e.z, h.x - e.x);
+    if (d - e.r - 0.4 > e.range) { const s = e.speed * (e.st.chill ? 0.6 : 1) * dt; e.x += ((h.x - e.x) / d) * s; e.z += ((h.z - e.z) / d) * s; e.moving = true; }
+  }
+  for (let i = 0; i < alive.length; i++) for (let j = i + 1; j < alive.length; j++) {
+    const a = alive[i], b = alive[j], ddx = b.x - a.x, ddz = b.z - a.z, d = Math.hypot(ddx, ddz) || 0.01, min = a.r + b.r;
+    if (d < min) { const p = (min - d) / 2 / d; if (a.speed) { a.x -= ddx * p; a.z -= ddz * p; } if (b.speed) { b.x += ddx * p; b.z += ddz * p; } }
+  }
+  for (const e of alive) { const ddx = h.x - e.x, ddz = h.z - e.z, d = Math.hypot(ddx, ddz) || 0.01, min = e.r + 0.4; if (d < min) { h.x += (ddx / d) * (min - d); h.z += (ddz / d) * (min - d); } }
+}
+
 export const ascMult = (state) => Math.pow(2, state.ascensions || 0);
 
 // ---------------- enemies ----------------
@@ -65,8 +123,8 @@ const rollMods = (lvl) => { const n = lvl > 40 ? 2 : 1; const out = []; while (o
 export function newCombat(state) {
   const st = stats(state);
   return {
-    st, t: 0, hero: { hp: st.hp, shield: 0, res: 50, cds: {}, gcd: 0, buffs: [], dodge: 0, atk: 0, dead: 0, dots: [], hits: 0, soul: [], minions: [], petT: 1, smiteT: 4, phoenixT: 5, corrupt: 0, castFlash: null },
-    enemies: [], wave: 0, waves: WAVES_PER_STAGE, pause: 0.6, events: [], kills: 0, failed: false,
+    st, t: 0, hero: { hp: st.hp, shield: 0, res: 50, cds: {}, gcd: 0, buffs: [], dodge: 0, atk: 0, dead: 0, dots: [], hits: 0, soul: [], minions: [], petT: 1, smiteT: 4, phoenixT: 5, corrupt: 0, castFlash: null, x: 0, z: 0, face: 0, moving: false },
+    enemies: [], zones: [], dir: 0, wave: 0, waves: WAVES_PER_STAGE, pause: 0.6, events: [], kills: 0, failed: false,
   };
 }
 export function ensureCombat(state) {
@@ -88,9 +146,11 @@ export function setStage(state, stage) {
 }
 function spawnWave(state, c) {
   const r = state.run;
-  if (r) { c.enemies = runPack(state, r, c.wave); return; }
+  c.zones = [];
+  if (r) { c.enemies = runPack(state, r, c.wave); place(c, c.enemies); return; }
   c.waves = WAVES_PER_STAGE;
   c.enemies = regionPack(state, state.stage, c.wave);
+  place(c, c.enemies);
   ev(c, { t: 'wave', wave: c.wave, boss: c.enemies.some((e) => e.boss) });
 }
 
@@ -240,6 +300,9 @@ export function tick(state, dt) {
     c.pause = 0.5;
     return;
   }
+  if (alive.some((e) => e.x === undefined)) place(c, alive.filter((e) => e.x === undefined), { near: c.hero, around: true });
+  c.zones = c.zones.filter((z) => c.enemies.some((e) => e.id === z.owner && e.hp > 0 && e.tele));
+  moveStep(state, c, dt, alive);
   // buffs
   const B = { more: 0, aspd: 0, crit: 0, critDmg: 0, leech: 0, dr: 0, thorns: 0, petDmg: 0, fire: 0, hpRegenPct: 0 };
   h.buffs = h.buffs.filter((b) => (b.t -= dt) > 0);
@@ -282,11 +345,13 @@ export function tick(state, dt) {
   let aspd = st.aspd * (1 + B.aspd / 100);
   if (h.hp < st.hp * 0.5) aspd *= 1 + st.furyAspd / 100;
   if (r?.kind === 'dungeon' && DUNGEONS[r.key].mech === 'chill') aspd *= 0.75;
-  h.atk += dt * aspd;
-  if (h.atk >= 1) {
+  h.atk = Math.min(1.2, h.atk + dt * aspd);
+  const btgt = target(state, c);
+  if (h.atk >= 1 && btgt && inRange(state, c, btgt)) {
     h.atk -= 1;
-    const tgt = target(state, c);
-    if (tgt) {
+    const tgt = btgt;
+    ev(c, { t: 'swing', id: tgt.id });
+    {
       h.hits++;
       const fifth = st.flags.has('fifth') && h.hits % 5 === 0;
       const elem = BASIC_ELEM[state.cls];
@@ -332,11 +397,12 @@ export function tick(state, dt) {
     }
     if (e.hp <= 0) continue;
     if (e.mods.includes('regen')) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.02 * dt);
-    if (e.mods.includes('summoner')) { e.summonT -= dt; if (e.summonT <= 0 && c.enemies.length < 6) { e.summonT = 7; c.enemies.push(makeEnemy(state, e.lvl, { art: ['monsters', 'skeleton'], name: 'Summoned Skeleton', mult: 0.3 })); ev(c, { t: 'summon' }); } }
+    if (e.mods.includes('summoner')) { e.summonT -= dt; if (e.summonT <= 0 && c.enemies.length < 6) { e.summonT = 7; c.enemies.push(makeEnemy(state, e.lvl, { art: ['monsters', 'skeleton'], name: 'Summoned Skeleton', mult: 0.3 })); place(c, c.enemies, { near: e }); ev(c, { t: 'summon' }); } }
     if (e.frozen > 0) { e.frozen -= dt; continue; }
     if (e.boss) bossMechanics(state, c, e, dt);
     if (e.tele) continue;
     let rate = e.aspd * (e.st.chill ? 0.65 : 1) * (e.enraged ? 1.5 : 1);
+    if (distHE(c, e) - e.r - 0.4 > e.range + 0.3) { e.atk = Math.min(e.atk, 0.6); continue; }
     e.atk += dt * rate;
     if (e.atk >= 1) {
       e.atk -= 1;
@@ -354,6 +420,9 @@ export function tick(state, dt) {
 
 function wantCast(state, c, role, sk, alive) {
   const h = c.hero, st = c.st, R = state.rules;
+  const t0 = target(state, c);
+  if ((role === 'primary' || role === 'secondary') && sk.coef && !(t0 && inRange(state, c, t0, 0.5))) return false;
+  if ((role === 'aoe' || role === 'ultimate') && sk.coef && !(t0 && inRange(state, c, t0, 2.5))) return false;
   const hpk = h.hp / st.hp;
   const boss = alive.some((e) => e.boss), elite = alive.some((e) => e.elite);
   const tele = alive.some((e) => e.tele && e.tele.t < 0.9);
@@ -390,7 +459,9 @@ function castSkill(state, c, role, sk, alive, echo = false) {
   }
   if (sk.debuff) for (const e of alive) { applyStatus(state, c, e, sk.debuff, 0); if (sk.debuff2) applyStatus(state, c, e, sk.debuff2, 0); }
   if (!sk.coef) return;
-  const targets = sk.aoe ? alive : [target(state, c)].filter(Boolean);
+  const t0 = target(state, c);
+  const targets = !t0 ? [] : sk.aoe ? alive.filter((e) => (role === 'ultimate' ? distHE(c, e) < 11 : Math.hypot(e.x - t0.x, e.z - t0.z) < 4.5)) : [t0];
+  ev(c, { t: 'skillHit', id: sk.id, role, elem: sk.elem, ids: targets.map((e) => e.id) });
   for (const e of targets) {
     for (let i = 0; i < sk.hits; i++) {
       if (e.hp <= 0) break;
@@ -587,9 +658,11 @@ function bossMechanics(state, c, e, dt) {
     e.tele.t -= dt;
     if (e.tele.t <= 0) {
       const t = e.tele; e.tele = null;
-      ev(c, { t: 'teleHit', id: e.id, kind: t.kind });
+      ev(c, { t: 'teleHit', id: e.id, kind: t.kind, zones: t.zones });
+      const h = c.hero;
+      if (!(t.zones || []).some((z) => Math.hypot(h.x - z.x, h.z - z.z) <= z.r + 0.2)) { ev(c, { t: 'avoided' }); return; }
       const fake = { ...e, tele: true };
-      if (t.kind === 'storm') { c.hero.dots.push({ t: 4, dps: e.dmg * 0.5, elem: 'fire' }); return; }
+      if (t.kind === 'storm') { damageHero(state, c, e.dmg * 1.5, 'fire', fake); c.hero.dots.push({ t: 4, dps: e.dmg * 0.5, elem: 'fire' }); return; }
       damageHero(state, c, e.dmg * t.mult, t.kind === 'breath' ? 'fire' : t.kind === 'ultimate' ? 'shadow' : 'phys', fake);
       if (t.kind === 'breath') c.hero.dots.push({ t: 3, dps: e.dmg * 0.4, elem: 'fire' });
     }
@@ -602,12 +675,21 @@ function bossMechanics(state, c, e, dt) {
     switch (m) {
       case 'slam': e.mechT.slam = 8; e.tele = { kind: 'slam', name: 'Crushing Slam', t: 1.6, total: 1.6, mult: 3.5 }; break;
       case 'breath': e.mechT.breath = 9; e.tele = { kind: 'breath', name: 'Fire Breath', t: 1.8, total: 1.8, mult: 2.5 }; break;
-      case 'storm': e.mechT.storm = 11; e.tele = { kind: 'storm', name: e.art[1] === 'icesovereign' ? 'Blizzard' : 'Firestorm', t: 1.2, total: 1.2, mult: 0 }; break;
+      case 'storm': e.mechT.storm = 11; e.tele = { kind: 'storm', name: e.art[1] === 'icesovereign' ? 'Blizzard' : 'Firestorm', t: 1.5, total: 1.5, mult: 1.5 }; break;
       case 'ultimate': e.mechT.ultimate = 13; e.tele = { kind: 'ultimate', name: e.phaseNames[3] || 'Annihilation', t: 2.6, total: 2.6, mult: 7 }; break;
-      case 'adds': e.mechT.adds = 12; if (c.enemies.filter((x) => x.hp > 0).length < 5) { for (let i = 0; i < 2; i++) c.enemies.push(makeEnemy(state, e.lvl, { art: ['monsters', pick(REGIONS[regionOf(state.stage)].monsters)], mult: 0.6 })); ev(c, { t: 'summon' }); } break;
+      case 'adds': e.mechT.adds = 12; if (c.enemies.filter((x) => x.hp > 0).length < 5) { for (let i = 0; i < 2; i++) c.enemies.push(makeEnemy(state, e.lvl, { art: ['monsters', pick(REGIONS[regionOf(state.stage)].monsters)], mult: 0.6 })); place(c, c.enemies, { near: e }); ev(c, { t: 'summon' }); } break;
       case 'shield': e.mechT.shield = 14; e.shieldT = 3; ev(c, { t: 'bossShield', id: e.id }); break;
     }
-    if (e.tele) { ev(c, { t: 'tele', id: e.id, name: e.tele.name }); break; }
+    if (e.tele) {
+      const h = c.hero, T = e.tele;
+      if (T.kind === 'slam') T.zones = [{ x: h.x, z: h.z, r: 2.6 }];
+      else if (T.kind === 'breath') T.zones = [{ x: (h.x + e.x) / 2 + (h.x - e.x) * 0.25, z: (h.z + e.z) / 2 + (h.z - e.z) * 0.25, r: 3.4 }];
+      else if (T.kind === 'storm') T.zones = [{ x: h.x, z: h.z, r: 1.9 }, ...[0, 1, 2].map(() => ({ x: h.x + rand(-4, 4), z: h.z + rand(-4, 4), r: 1.9 }))];
+      else T.zones = [{ x: e.x, z: e.z, r: 8.5 }];
+      for (const z of T.zones) { z.owner = e.id; z.tele = T; z.kind = T.kind; c.zones.push(z); }
+      ev(c, { t: 'tele', id: e.id, name: T.name });
+      break;
+    }
   }
 }
 

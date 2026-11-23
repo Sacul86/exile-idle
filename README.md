@@ -11,6 +11,7 @@ No pay-to-win, no energy, no loot boxes, no guilds, no required events or login 
 - **12 gear slots, 7 rarities** (Common to Ancient), unique affixes, and non-destructive upgrades: Enhance, Refine, Enchant, Socket, Awaken. Loot comparisons, locks, filters and auto-salvage rules.
 - **Gems** (6 types, 6 tiers, combine 3→1), **runes**, **6 inscription slots** with set bonuses.
 - **Companions**: 1 active + 2 passive, levelling and evolving.
+- **Isometric 3D battles** (three.js + KayKit CC0 models) with a drag-anywhere joystick; Classic 2D view available in Settings.
 - **10 regions × 10 stages**, elites with modifiers, multi-phase region bosses with readable telegraphs.
 - **Activities**: Equipment Dungeons (5 themed dungeons targeting gear slots), Crystal Caverns, Boss Rush, Treasure Vault, Endless Tower, Rift Challenges.
 - **Crafting** with materials and recipes (e.g. Dragonbane).
@@ -21,3 +22,6 @@ No pay-to-win, no energy, no loot boxes, no guilds, no required events or login 
 ## Dev
 Vanilla JS ES modules, no build step. Serve the folder (`python3 -m http.server`).
 `node tools/sim.js <class> <hours>` runs a headless balance sim. Art sheets are listed in `art/sources.json` and processed by the GitHub Action in `.github/workflows/art.yml`.
+
+## Credits
+3D characters and scenery: KayKit by Kay Lousberg (CC0) — see `assets/3d/KAYKIT-LICENSE.txt`. Rendering: three.js (MIT), bundled in `vendor/`.

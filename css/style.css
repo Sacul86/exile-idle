@@ -74,6 +74,10 @@ select { background: var(--panel2); border: 1px solid var(--line); border-radius
 .waves i.done { background: #6fbf4e; } .waves i.cur { background: #e0b45a; } .waves i.boss { outline: 1px solid #ff6a3a; }
 .arena { position: relative; height: min(300px, 42vh); border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #15101c; margin-bottom: 8px; }
 .arena canvas { position: absolute; inset: 0; }
+.arena.iso { height: min(440px, 54vh); touch-action: none; }
+.scene3d { position: absolute; inset: 0; }
+.scene3d canvas { position: absolute; inset: 0; }
+.scene3d .overlay { pointer-events: none; }
 .bossbar { position: absolute; left: 8px; right: 8px; top: 6px; z-index: 2; }
 .bb-name { font-family: Cinzel, Georgia, serif; font-size: .95em; color: #ffd0a0; text-shadow: 0 0 4px #000, 0 0 4px #000; margin-bottom: 2px; }
 .bb-name .muted { color: #e0c8b0; font-family: system-ui; font-size: .85em; }

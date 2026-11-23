@@ -18,9 +18,9 @@ export function newState(cls = 'warrior') {
     stage: 1, maxStage: 1, autoAdvance: true, retryIn: 0, worldTier: 0, maxWorldTier: 0, bossesBeaten: {},
     ascensions: 0, ascPoints: 0, ascPerks: {},
     dungeonTier: Object.fromEntries(DUNGEON_KEYS.map((k) => [k, 1])), towerBest: 0, towerClaimed: 0, riftLevel: 1, riftBest: 0, rushBest: 0,
-    rules: { heal: 50, ult: 'boss', target: 'lowest', aoeMin: 2, saveDef: true },
+    rules: { heal: 50, ult: 'boss', target: 'lowest', aoeMin: 2, saveDef: true, autoDodge: true },
     filters: { salvageBelow: 1, keepUniques: true, keepAffixes: [], autoEquip: true },
-    settings: { speed: 1, dmgNums: 'all', shake: true, sound: false, effects: 'full', text: 'm', colorSafe: false, autoOptimise: false },
+    settings: { view: '3d', speed: 1, dmgNums: 'all', shake: true, sound: false, effects: 'full', text: 'm', colorSafe: false, autoOptimise: false },
     run: null, lastSeen: Date.now(), totals: { kills: 0, bosses: 0, deaths: 0, items: 0, time: 0 }, autoRepeat: true,
   };
   autoSkills(s);
@@ -41,7 +41,7 @@ export function load() {
 }
 export function save(state) {
   state.lastSeen = Date.now();
-  const { combat, _st, ...rest } = state;
+  const { combat, _st, input, ...rest } = state;
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(rest)); } catch (e) { console.warn('save failed', e); }
 }
 
