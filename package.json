@@ -1,1 +1,26 @@
-{"name": "delve-and-loot", "private": true, "type": "module", "scripts": {"sim": "node tools/sim.js"}}
+{
+  "name": "pocket-realm",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite app",
+    "build": "node tools/clean.mjs && vite build app",
+    "atlas": "node tools/atlas.mjs",
+    "sim": "tsx tools/sim.ts",
+    "typecheck": "tsc --noEmit -p app"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0",
+    "preact": "^10.29.8"
+  },
+  "devDependencies": {
+    "@fontsource/pixelify-sans": "^5.3.0",
+    "@fontsource/press-start-2p": "^5.3.0",
+    "@preact/preset-vite": "^2.10.6",
+    "jsfxr": "^1.4.1",
+    "sharp": "^0.35.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.6"
+  }
+}

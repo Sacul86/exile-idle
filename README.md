@@ -1,19 +1,30 @@
-# Delve & Loot
+# Pocket Realm
 
-An idle dungeon-diving loot game for phones (portrait PWA), inspired by the Loot Hunters loop. Play at https://sacul86.github.io/exile-idle/
+An idle pixel RPG for phones. Play it at **https://sacul86.github.io/exile-idle/**
 
-**The loop:** your hero dives floor by floor and auto-fights. Loot fills a limited bag. Die and you drop half of what you're carrying; return to town and you bank it all. Sell, merge 3 of an item into a higher rarity, upgrade gear, buy potions and spells, train, then dive deeper.
+## What's in it
+- **Party:** six heroes to recruit. Up to four fight at once; the rest gather resources.
+- **Stage combat:** ten kills per stage and a timed boss every five stages. Tap to deal damage and build Frenzy (double damage and gold for 15s).
+- **Hero levels:** each hero gets ×3 power every 25 levels.
+- **Skills:** Mining, Woodcutting, Fishing and Foraging are gathered by heroes. Smithing (crafts gear), Cooking (makes auto-eaten food) and Alchemy (makes timed buff potions) use what they gather.
+- **Loot:** five rarities and three gear slots per hero, with auto-equip, auto-salvage and item locking.
+- **Collection:** 12 pets, achievements with permanent bonuses, and a 20-step guided quest line.
+- **Ascension:** from stage 40, reset for Souls and spend them on a permanent upgrade tree.
+- **Offline progress:** an itemised "welcome back" report when you return.
+- **Sound:** synthesised SFX and biome music. Saves locally, with export and import.
 
-- One hero, four looks/fighting styles (Knight, Barbarian, Ranger, Mage)
-- 10 dungeons as 10-floor bands of one endless descent, checkpoints every 5 floors, a boss every 10th floor
-- Bag + death penalty, smart retreat rules, auto-dive, auto-sell/equip/refill
-- Town: potions, 6 spells (auto-cast), 6 trainings, stash and selling
-- Forge: merge 3→1 up a rarity, +10 upgrades
-- Isometric 3D battles (three.js + KayKit CC0 models) with a drag-anywhere joystick and dodgeable boss telegraphs
-- 12h offline progress with a report
-
-## Dev
-Vanilla JS ES modules, no build step. `node tools/sim.js <paladin|warrior|ranger|mage> <hours>` runs a headless balance sim.
+## Development
+```
+npm install
+npm run dev        # local dev server
+npm run build      # builds into the repo root (served by GitHub Pages)
+npm run sim -- 6   # headless 6-hour balance simulation
+npm run atlas      # repack the sprite atlas (needs the DCSS rltiles source)
+```
+Stack: Phaser 3 (battle scene), Preact (UI), TypeScript and Vite. The source is in `app/`. The built game in the repo root is committed, so **run `npm run build` before pushing**.
 
 ## Credits
-3D characters and scenery: KayKit by Kay Lousberg (CC0) — `assets/3d/KAYKIT-LICENSE.txt`. Rendering: three.js (MIT), bundled in `vendor/`.
+- Pixel art: [Dungeon Crawl Stone Soup](https://github.com/crawl/tiles) / RLTiles, CC0
+- Music: [Ninja Adventure](https://pixel-boy.itch.io/ninja-adventure-asset-pack) by Pixel-boy & AAA, CC0
+- Font: Pixelify Sans, SIL OFL
+- Engine: Phaser (MIT), Preact (MIT); sound effects made with jsfxr (Unlicense)
