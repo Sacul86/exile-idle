@@ -4,7 +4,7 @@
   --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: 'Pixelify Sans', system-ui, sans-serif; font-size: 16.5px; line-height: 1.3; overscroll-behavior: none; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Roboto, 'Segoe UI', sans-serif; font-size: 16px; line-height: 1.3; overscroll-behavior: none; }
 body { user-select: none; -webkit-user-select: none; }
 #app { height: 100%; }
 button, select, input { font-family: inherit; font-size: inherit; color: inherit; }
@@ -155,3 +155,9 @@ input[type=range] { accent-color: var(--accent); width: 140px; }
 .root.panel-min .panel-area { display: none; }
 .root.panel-max .battle { height: 27vh; min-height: 185px; }
 .root.panel-max .quest { display: none; }
+
+/* pixel font only where it's large: headings, logo, numbers, tabs */
+h2, .logo, .sub, .tb-item b, .tabs span, .gold, .hero .lvl, .badge, .hint, .btn.big, .xpbar span, .kv b, .tag { font-family: 'Pixelify Sans', system-ui, sans-serif; }
+.tabs span { font-size: 14px; }
+.card b, .node .nm { font-weight: 600; }
+.muted { color: #c9c2dc; }
