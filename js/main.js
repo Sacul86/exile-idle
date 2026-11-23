@@ -20,6 +20,7 @@ import {
   enrageMult, autoAllocate, charOf, partyReady, bestHeroFor, hatchEgg, openBox, buyShop,
 } from './game.js';
 
+export const VERSION = '2026.11.23-b';
 let state = load() || newState();
 const arena = new Arena();
 ensureCombat(state);
@@ -624,6 +625,7 @@ function renderMore() {
       ${row('Party wipes', state.deaths)}
     </div></div>
     <div class="panel"><h2>Save</h2>
+      <div class="muted" style="font-size:11px;margin-bottom:6px">Version ${VERSION}</div>
       <div class="actions">
         <button class="btn" data-act="export">Export</button>
         <button class="btn" data-act="import">Import</button>
@@ -964,5 +966,12 @@ if (ensureParty()) offlineCatchUp();
 requestAnimationFrame(frame);
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // when a new version takes over, reload once so the new files are used
+  let reloaded = false;
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded || !hadController) return;
+    reloaded = true; save(state); location.reload();
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => r.update()).catch(() => {});
 }
