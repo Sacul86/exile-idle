@@ -371,7 +371,7 @@ function Modal({ m, close, open }: { m: any; close: () => void; open: (m: any) =
         <button class="btn small" onClick={() => { const txt = prompt('Paste a save:'); if (txt) { try { localStorage.setItem(E.SAVE_KEY, decodeURIComponent(escape(atob(txt.trim())))); location.reload(); } catch (e) { alert('That save could not be read.'); } } }}>Import save</button>
         <button class="btn small danger" onClick={() => { if (confirm('Erase your save and start over?')) { resetGame(); location.reload(); } }}>Reset</button>
       </div>
-      <p class="small muted">Pocket Realm. Art: Dungeon Crawl Stone Soup / RLTiles (CC0). Music: Ninja Adventure by Pixel-boy & AAA (CC0). Fonts: Pixelify Sans (OFL).</p></>;
+      <p class="small muted">Pocket Realm. Art: Dungeon Crawl Stone Soup / RLTiles (CC0). Music: Ninja Adventure by Pixel-boy & AAA (CC0).</p></>;
   }
   return (
     <div class="modal" onClick={(e: any) => { if (e.target.classList.contains('modal') && m.kind !== 'offline') close(); }}>

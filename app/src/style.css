@@ -157,7 +157,8 @@ input[type=range] { accent-color: var(--accent); width: 140px; }
 .root.panel-max .quest { display: none; }
 
 /* pixel font only where it's large: headings, logo, numbers, tabs */
-h2, .logo, .sub, .tb-item b, .tabs span, .gold, .hero .lvl, .badge, .hint, .btn.big, .xpbar span, .kv b, .tag { font-family: 'Pixelify Sans', system-ui, sans-serif; }
+h2, .logo, .tb-item b, .gold, .btn.big { font-weight: 700; }
+.logo { font-weight: 800; letter-spacing: 0; }
 .tabs span { font-size: 14px; }
 .card b, .node .nm { font-weight: 600; }
 .muted { color: #c9c2dc; }

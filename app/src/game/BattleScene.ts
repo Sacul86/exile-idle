@@ -199,7 +199,7 @@ export class BattleScene extends Phaser.Scene {
     if (!store.s.settings.dmgNums) return;
     if (!crit && this.numBudget <= 0) return;
     this.numBudget--;
-    const t = this.add.text(x + Phaser.Math.Between(-18, 18), y, text, { fontFamily: FONT, resolution: DPR, fontSize: `${size}px`, color, stroke: '#000', strokeThickness: 4, fontStyle: crit ? 'bold' : 'normal' }).setOrigin(0.5).setDepth(90);
+    const t = this.add.text(x + Phaser.Math.Between(-18, 18), y, text, { fontFamily: SANS, resolution: DPR, fontSize: `${size}px`, color, stroke: '#000', strokeThickness: 4, fontStyle: crit ? '900' : 'bold' }).setOrigin(0.5).setDepth(90);
     t.setScale(crit ? 1.6 : 1.2);
     this.tweens.add({ targets: t, scale: 1, duration: 120, ease: 'Back.Out' });
     this.tweens.add({ targets: t, y: y - 46, alpha: 0, duration: 800, delay: 200, ease: 'Cubic.Out', onComplete: () => t.destroy() });
@@ -245,7 +245,7 @@ export class BattleScene extends Phaser.Scene {
   banner(text: string, sub = '', color = '#ffd34d', big = false) {
     const y = this.H * 0.42;
     const bgc = this.add.rectangle(this.W / 2, y, this.W, big ? 64 : 40, 0x000000, 0.65).setDepth(110);
-    const t = this.add.text(this.W / 2, y - (sub ? 8 : 0), text, { fontFamily: FONT, resolution: DPR, fontSize: big ? '28px' : '20px', color, stroke: '#000', strokeThickness: 5 }).setOrigin(0.5).setDepth(111);
+    const t = this.add.text(this.W / 2, y - (sub ? 8 : 0), text, { fontFamily: SANS, fontStyle: 'bold', resolution: DPR, fontSize: big ? '28px' : '20px', color, stroke: '#000', strokeThickness: 5 }).setOrigin(0.5).setDepth(111);
     const st = sub ? this.add.text(this.W / 2, y + (big ? 18 : 12), sub, { fontFamily: SANS, fontStyle: 'bold', resolution: DPR, fontSize: '14px', color: '#e8dcc8', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setDepth(111) : null;
     const items = [bgc, t, st].filter(Boolean);
     items.forEach((o: any) => { o.setAlpha(0); });

@@ -26,5 +26,4 @@ Stack: Phaser 3 (battle scene), Preact (UI), TypeScript and Vite. The source is 
 ## Credits
 - Pixel art: [Dungeon Crawl Stone Soup](https://github.com/crawl/tiles) / RLTiles, CC0
 - Music: [Ninja Adventure](https://pixel-boy.itch.io/ninja-adventure-asset-pack) by Pixel-boy & AAA, CC0
-- Font: Pixelify Sans, SIL OFL
 - Engine: Phaser (MIT), Preact (MIT); sound effects made with jsfxr (Unlicense)
