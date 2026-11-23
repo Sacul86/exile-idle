@@ -111,6 +111,10 @@ function Party({ open }: { open: (m: any) => void }) {
   const s = useStore();
   const mult = s.settings.buy;
   const total = E.partyDps(s) || 1;
+  // best damage-per-gold among fighters (looks ahead to the next x3 milestone)
+  const eff = (id: HeroId) => { const h = s.heroes[id]!; const toM = 25 - (h.level % 25); return Math.max(E.dpsGain(s, id, 1) / E.levelCostN(id, h.level, 1), E.dpsGain(s, id, toM) / E.levelCostN(id, h.level, toM)); };
+  const fightIds = (Object.keys(s.heroes) as HeroId[]).filter((id) => s.heroes[id]!.job === 'fight');
+  const bestId = fightIds.length > 1 ? fightIds.reduce((a, b) => (eff(b) > eff(a) ? b : a)) : null;
   return (
     <div>
       <div class="row between">
@@ -134,8 +138,9 @@ function Party({ open }: { open: (m: any) => void }) {
         const dps = E.heroDps(s, d.id);
         const next = (Math.floor(h.level / 25) + 1) * 25;
         const job = h.job === 'fight' ? 'Fighting' : h.job === 'idle' ? 'Resting' : `${GATHER[h.job as GatherSkill].verb}`;
+        const gain = h.job === 'fight' ? E.dpsGain(s, d.id, n) : 0;
         return (
-          <div class="card hero">
+          <div class={`card hero ${bestId === d.id ? 'best' : ''}`}>
             <div class="portrait"><Spr k={d.sprite} s={2} /><span class="lvl">{h.level}</span></div>
             <div class="grow">
               <div><b>{d.name}</b> <span class="muted small">{d.title}</span></div>
@@ -144,7 +149,9 @@ function Party({ open }: { open: (m: any) => void }) {
               <button class={`chip ${h.job === 'fight' ? 'fight' : 'job'}`} onClick={() => open({ kind: 'job', id: d.id })}>{job} ▾</button>
             </div>
             <button class="btn buy" disabled={cost > s.gold} onClick={() => { const k = act((st) => E.levelUp(st, d.id, mult ? n : 0)); if (k) { sfx('coin'); if (Math.floor((h.level - k) / 25) !== Math.floor(h.level / 25)) { sfx('level'); toast(`✨ ${d.name} reached Lv ${h.level}: power x3!`, 'good'); } } }}>
+              {bestId === d.id ? <span class="best-tag">Best value</span> : null}
               Lv +{n}<br /><Gold n={cost} ok={cost <= s.gold} />
+              {gain > 0 ? <span class="gain">+{fmt(gain)}/s</span> : null}
             </button>
           </div>
         );

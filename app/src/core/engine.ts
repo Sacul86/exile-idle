@@ -77,6 +77,11 @@ export function heroDps(s: GameState, id: HeroId, rt?: Runtime) {
   const w = h.gear.weapon ? h.gear.weapon.stat : 0;
   return d.dps * h.level * milestone(h.level) * (1 + w / 100) * globalDmg(s, rt);
 }
+// DPS gained by buying n levels (n<=0 = max affordable)
+export function dpsGain(s: GameState, id: HeroId, n: number) {
+  const h = s.heroes[id]; if (!h) return 0;
+  const before = heroDps(s, id), l0 = h.level; h.level += n; const after = heroDps(s, id); h.level = l0; return after - before;
+}
 export function heroMaxHp(s: GameState, id: HeroId) {
   const h = s.heroes[id]!; const d = HERO[id];
   const a = h.gear.armor ? h.gear.armor.stat : 0;

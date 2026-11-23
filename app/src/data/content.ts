@@ -14,15 +14,15 @@ export interface HeroDef {
 export const HEROES: HeroDef[] = [
   { id: 'knight', name: 'Sir Donald', title: 'Knight', sprite: 'hero_knight', weapon: 'wk', role: 'Tank — draws enemy attacks and takes 40% less damage', dps: 4, hp: 60, costBase: 8, recruit: 0, recruitStage: 1,
     ability: { name: 'Shield Wall', cd: 14, desc: 'Party takes 60% less damage for 5s', kind: 'shield' }, crit: 5, color: '#7ab0ff' },
-  { id: 'ranger', name: 'Joseph', title: 'Ranger', sprite: 'hero_ranger', weapon: 'wr', role: 'Steady ranged damage', dps: 9, hp: 30, costBase: 40, recruit: 150, recruitStage: 3,
+  { id: 'ranger', name: 'Joseph', title: 'Ranger', sprite: 'hero_ranger', weapon: 'wr', role: 'Steady ranged damage', dps: 15, hp: 34, costBase: 40, recruit: 150, recruitStage: 3,
     ability: { name: 'Volley', cd: 10, desc: '5 arrows, each 120% damage', kind: 'volley' }, crit: 10, color: '#7ad07a' },
-  { id: 'cleric', name: 'Mennas', title: 'Cleric', sprite: 'hero_cleric', weapon: 'wc', role: 'Heals the party', dps: 3, hp: 40, costBase: 120, recruit: 900, recruitStage: 6,
+  { id: 'cleric', name: 'Mennas', title: 'Cleric', sprite: 'hero_cleric', weapon: 'wc', role: 'Heals the party', dps: 12, hp: 60, costBase: 120, recruit: 900, recruitStage: 6,
     ability: { name: 'Sanctuary', cd: 9, desc: 'Heals the whole party for 35% life', kind: 'heal' }, crit: 5, color: '#ffe9a0' },
-  { id: 'mage', name: 'Maggie', title: 'Mage', sprite: 'hero_mage', weapon: 'wm', role: 'Huge fire bursts', dps: 18, hp: 24, costBase: 600, recruit: 6000, recruitStage: 11,
+  { id: 'mage', name: 'Maggie', title: 'Mage', sprite: 'hero_mage', weapon: 'wm', role: 'Huge fire bursts', dps: 110, hp: 60, costBase: 600, recruit: 6000, recruitStage: 11,
     ability: { name: 'Fireball', cd: 8, desc: 'Deals 600% damage', kind: 'burst' }, crit: 5, color: '#ff8a3a' },
-  { id: 'rogue', name: 'Sonja', title: 'Rogue', sprite: 'hero_rogue', weapon: 'wo', role: 'Critical hits', dps: 30, hp: 30, costBase: 4000, recruit: 50000, recruitStage: 18,
+  { id: 'rogue', name: 'Sonja', title: 'Rogue', sprite: 'hero_rogue', weapon: 'wo', role: 'Critical hits', dps: 420, hp: 120, costBase: 4000, recruit: 50000, recruitStage: 18,
     ability: { name: 'Backstab', cd: 7, desc: 'A guaranteed 5x critical strike', kind: 'crit' }, crit: 30, color: '#c08bff' },
-  { id: 'barbarian', name: 'Rupert', title: 'Barbarian', sprite: 'hero_barbarian', weapon: 'wb', role: 'Brutal melee', dps: 70, hp: 70, costBase: 30000, recruit: 400000, recruitStage: 26,
+  { id: 'barbarian', name: 'Rupert', title: 'Barbarian', sprite: 'hero_barbarian', weapon: 'wb', role: 'Brutal melee', dps: 1700, hp: 420, costBase: 30000, recruit: 400000, recruitStage: 26,
     ability: { name: 'Rage', cd: 16, desc: 'Triple damage for 6s', kind: 'rage' }, crit: 10, color: '#ff5a4a' },
 ];
 export const HERO = Object.fromEntries(HEROES.map((h) => [h.id, h])) as Record<HeroId, HeroDef>;
