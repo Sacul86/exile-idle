@@ -1,8 +1,9 @@
 // Isometric 3D battle view (three.js + KayKit CC0 models). Pure presentation: reads state.combat,
 // writes only state.input (joystick). A 2D overlay canvas draws numbers, bars, statuses and banners.
 import * as THREE from '../vendor/three.bundle.js';
-import { CLASSES, COMPANIONS, RARITIES } from './data.js';
-import { STATUS, SKILLS } from './skills.js';
+import { RARITIES, SPELLS, DUNGEONS } from './data.js';
+const SKILLS = SPELLS;
+const STATUS = { burn: { name: 'Burn', icon: '🔥', letter: 'B', color: '#ff7a3a' }, freeze: { name: 'Frozen', icon: '❄️', letter: 'F', color: '#bfefff' } };
 
 const ELEM_COL = { phys: 0xf0e6d2, fire: 0xff7a2b, cold: 0x7ad0ff, lightning: 0xffe36b, arcane: 0xc08bff, shadow: 0xa05ae0, holy: 0xffe9a0, poison: 0x7ad04a, nature: 0x6fe07a };
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
@@ -40,6 +41,7 @@ function enemyModel(artId) {
 // scene themes keyed by the backdrop id the UI already uses
 const T = (o) => o;
 const THEMES = {
+  town: T({ floor: 'outdoor:hex_grass', desat: true, tint: 0x8ac060, ground: 0x4a7a3a, sky: 0xa8d0e8, fog: 0xb8d8c0, sun: 0xfff0d0, props: ['outdoor:tent', 'outdoor:barrel', 'outdoor:crate_A_big', 'outdoor:flag_red', 'outdoor:fence_wood_straight', 'outdoor:tree_single_A', 'outdoor:building_destroyed', 'outdoor:wall_straight'] }),
   crossroads: T({ desat: true, floor: 'outdoor:hex_grass', tint: 0x7ab850, ground: 0x5a8a3a, sky: 0x9fc6e0, fog: 0xa8c8a0, sun: 0xfff2d8, props: ['outdoor:tree_single_A', 'outdoor:tree_single_B', 'outdoor:trees_A_medium', 'outdoor:rock_single_A', 'outdoor:rock_single_C', 'outdoor:tent', 'outdoor:fence_wood_straight', 'outdoor:trees_B_large'] }),
   stones: T({ desat: true, floor: 'outdoor:hex_grass', tint: 0xb8a870, ground: 0x8a8050, sky: 0xc8c0a8, fog: 0xc8c0a0, sun: 0xffe8c0, props: ['outdoor:rock_single_A', 'outdoor:rock_single_E', 'outdoor:hill_single_A', 'outdoor:mountain_A', 'outdoor:building_destroyed', 'outdoor:trees_B_large', 'outdoor:wall_straight'] }),
   necropolis: T({ floor: 'spooky:floor_dirt', tint: 0x9aa088, ground: 0x3a3a2a, sky: 0x2a3030, fog: 0x4a5a48, sun: 0xb8d0c0, props: ['spooky:grave_A', 'spooky:grave_B', 'spooky:gravestone', 'spooky:tree_dead_large', 'spooky:coffin', 'spooky:lantern_standing', 'spooky:post_skull', 'spooky:fence_broken', 'spooky:crypt'] }),
@@ -312,7 +314,7 @@ export class Scene3D {
     if (!this.loaded) return;
     const H = this.hero;
     switch (e.t) {
-      case 'swing': if (H) { const cfg = HERO[state.cls]; H.play(cfg.atk[Math.floor(Math.random() * cfg.atk.length)], { once: true, speed: 1.6 }); if (cfg.ranged) this.projectile(this.heroPos(1.2), this.entPos(e.id, 1), ELEM_COL[state.cls === 'ranger' ? 'phys' : state.cls === 'warlock' ? 'shadow' : 'arcane'], 0.14, 0.18); } break;
+      case 'swing': if (H) { const cfg = HERO[state.look]; H.play(cfg.atk[Math.floor(Math.random() * cfg.atk.length)], { once: true, speed: 1.6 }); if (cfg.ranged) this.projectile(this.heroPos(1.2), this.entPos(e.id, 1), ELEM_COL[state.look === 'ranger' ? 'phys' : state.look === 'warlock' ? 'shadow' : 'arcane'], 0.14, 0.18); } break;
       case 'hit': {
         const v = this.ents.get(e.id);
         if (v) { v.flash = e.crit || !v.boss ? 0.08 : 0; if (!e.dot && v.char && !v.oneShotLock && Math.random() < 0.35) v.char.play('Hit_A', { once: true, speed: 1.5 }); }
@@ -345,23 +347,27 @@ export class Scene3D {
       case 'blaze': case 'explode': for (const [id] of this.ents) { const p = this.entPos(id, 0.1); this.groundRing(p, 0xff7a2b, 0.2, 1.8, 0.4); this.sparks({ ...p, y: 1 }, 0xff9a4a, 8); } break;
       case 'loot': if (e.rarity >= 2) { const p = this.heroPos(0); this.beam({ x: p.x + rand(-2, 2), y: 0, z: p.z + rand(-2, 2) }, new THREE.Color(RARITIES[e.rarity].color).getHex(), e.rarity >= 4 ? 2.6 : 1.4, e.rarity >= 4 ? 0.35 : 0.2); } break;
       case 'level': this.groundRing(this.heroPos(0.05), 0xffd34d, 0.3, 3, 0.8); this.sparks(this.heroPos(1), 0xffd34d, 20, true); this.flashIt('#ffd34d', 0.3, 0.15); if (H) H.play('Cheer', { once: true }); break;
-      case 'death': if (H) H.play('Death_A', { once: true, hold: true }); this.flashIt('#000000', 0.6, 0.5); this.banner = { text: 'Defeated', sub: 'Regrouping…', t: 2.5, c: '#ff6b5e' }; break;
+      case 'death': if (H) H.play('Death_A', { once: true, hold: true }); this.flashIt('#000000', 0.6, 0.5); this.banner = { text: 'You died', sub: e.lost ? `Dropped ${e.lost.items} item${e.lost.items === 1 ? '' : 's'} and ${fmtN(e.lost.gold)} gold` : '', t: 2.5, c: '#ff6b5e' }; break;
+      case 'floor': { const d = DUNGEONS[Math.min(DUNGEONS.length - 1, Math.floor((e.floor - 1) / 10))]; this.banner = { text: e.newDungeon || e.start ? d.name : `Floor ${e.floor}`, sub: e.newDungeon || e.start ? `Floor ${e.floor}` : '', t: 1.6, c: '#e0b45a' }; break; }
+      case 'flee': this.banner = { text: 'Retreating!', sub: 'Low life and no potions — banking your loot', t: 2, c: '#9ad1ff' }; break;
+      case 'bagFull': if (!this.bagFullT || this.t > this.bagFullT) { this.num(this.heroPos(2.6), 'Bag full!', '#ffb04a', 14, true); this.bagFullT = this.t + 3; } break;
+      case 'town': this.clearEntities(); break;
       case 'wave': if (e.boss) this.banner = { text: 'Boss!', sub: '', t: 1.6, c: '#ff8a2b' }; break;
       case 'runEnd': if (e.win) { this.flashIt('#ffd34d', 0.6, 0.3); if (H) H.play('Cheer', { once: true }); } break;
     }
   }
   castFx(e, state) {
-    const H = this.hero, cfg = HERO[state.cls], col = ELEM_COL[e.elem] || 0xffffff;
+    const H = this.hero, cfg = HERO[state.look], col = ELEM_COL[e.elem] || 0xffffff;
     if (!H) return;
     const hp = this.heroPos(1.2);
     const tgt = this.firstTarget(state);
     switch (e.role) {
       case 'primary': case 'secondary':
         H.play(cfg.ranged ? 'Spellcast_Shoot' : cfg.atk[e.role === 'secondary' ? 1 % cfg.atk.length : 0], { once: true, speed: 1.4 });
-        if (tgt) { if (cfg.ranged || state.cls === 'paladin') this.projectile(hp, tgt, col, e.role === 'secondary' ? 0.3 : 0.2, 0.25); else this.slash(tgt, col, e.role === 'secondary'); }
+        if (tgt) { if (cfg.ranged || state.look === 'paladin') this.projectile(hp, tgt, col, e.role === 'secondary' ? 0.3 : 0.2, 0.25); else this.slash(tgt, col, e.role === 'secondary'); }
         break;
       case 'aoe': H.play(cfg.aoe, { once: true, speed: 1.3 }); this.groundRing(this.heroPos(0.05), col, 0.5, 4, 0.5); break;
-      case 'defensive': H.play(state.cls === 'paladin' || state.cls === 'warrior' ? 'Block' : 'Spellcast_Raise', { once: true, speed: 1.4 }); this.shell = { col, t: 1.2 }; break;
+      case 'defensive': H.play(state.look === 'paladin' || state.look === 'warrior' ? 'Block' : 'Spellcast_Raise', { once: true, speed: 1.4 }); this.shell = { col, t: 1.2 }; break;
       case 'utility': H.play(SKILLS[e.id]?.summon ? 'Spellcast_Summon' : 'Spellcast_Raise', { once: true, speed: 1.3 }); this.groundRing(this.heroPos(0.05), col, 0.3, 2.8, 0.7); this.sparks(hp, col, 14, true); break;
       case 'ultimate':
         H.play('Spellcast_Long', { once: true, speed: 1.3 });
@@ -432,7 +438,7 @@ export class Scene3D {
     this.setTheme(bg);
     const h = c.hero; this.heroState = h;
     // hero
-    const cls = state.cls;
+    const cls = state.look;
     if (!this.hero || this.heroCls !== cls) {
       if (this.hero) this.scene.remove(this.hero.obj);
       const cfg = HERO[cls];
@@ -562,11 +568,11 @@ export class Scene3D {
     return v;
   }
   syncCompanion(state, h, dt) {
-    const id = state.companions?.active;
+    const id = null;
     if (this.compId !== id) {
       if (this.comp) this.scene.remove(this.comp.obj);
       this.comp = null; this.compId = id;
-      if (id) { const a = COMPANIONS[id].art; this.comp = this.makeBillboard(a[0], a[1], 1.3, a[0] === 'monsters'); this.scene.add(this.comp.obj); }
+      if (id) { const a = ['pets', id]; this.comp = this.makeBillboard(a[0], a[1], 1.3, a[0] === 'monsters'); this.scene.add(this.comp.obj); }
     }
     if (this.comp) {
       const tx = h.x - Math.cos(h.face || 0) * 1.4 + 0.8, tz = h.z - Math.sin(h.face || 0) * 1.4 - 0.8;
@@ -682,7 +688,7 @@ export class Scene3D {
       g.addColorStop(0, 'rgba(180,0,0,0)'); g.addColorStop(1, `rgba(180,0,0,${(0.35 - lifeK) * (1.2 + Math.sin(this.t * 6) * 0.3)})`);
       x.fillStyle = g; x.fillRect(0, 0, w, h);
     }
-    if (!this.hintShown && this.loaded) { this.hintT = (this.hintT || 0) + dt; if (this.hintT < 6) { x.globalAlpha = Math.min(1, (6 - this.hintT)); x.font = '600 11px system-ui'; x.fillStyle = '#e0d0b0'; x.fillText('Drag anywhere to move · let go to auto-fight', w / 2, h * 0.62); x.globalAlpha = 1; } else this.hintShown = true; }
+    if (!this.hintShown && this.loaded) { this.hintT = (this.hintT || 0) + dt; if (this.hintT < 6) { x.globalAlpha = Math.min(1, (6 - this.hintT)); x.font = '600 11px system-ui'; x.fillStyle = '#e0d0b0'; x.fillText(state.run ? 'Drag anywhere to move · let go to auto-fight' : '', w / 2, h * 0.62); x.globalAlpha = 1; } else this.hintShown = true; }
   }
   drawStatuses(e, cx, y) {
     const x = this.octx;

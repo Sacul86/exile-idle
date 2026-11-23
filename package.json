@@ -1,1 +1,1 @@
-{ "name": "eternal-ascent", "private": true, "type": "module", "scripts": { "sim": "node tools/sim.js" } }
+{"name": "delve-and-loot", "private": true, "type": "module", "scripts": {"sim": "node tools/sim.js"}}

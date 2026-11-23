@@ -1,136 +1,72 @@
-// Item generation, stats and upgrade costs (pure).
-import { S, SLOTS, SLOT_INFO, RARITIES, RARITY_WEIGHTS, AFFIXES, AFFIX, attrScale, UNIQUES, UNIQUE_KEYS, CLASSES, STAT_NAMES, PCT_STATS, GEMS, gemValue, INSCR_TAGS, INSCR_KEYS } from './data.js';
+// Items and hero stats (pure).
+import { S, SLOTS, BASES, BASE_KEYS, SLOT_BASE, RARITIES, RARITY_WEIGHTS, AFFIXES, AFFIX_KEYS, UPGRADE_MAX, LOOKS } from './data.js';
 
 let uid = Date.now() % 1e7;
 export const newId = () => (++uid).toString(36);
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
-const wpick = (list, wf) => { const tot = list.reduce((s, x) => s + wf(x), 0); let r = Math.random() * tot; for (const x of list) { r -= wf(x); if (r <= 0) return x; } return list[list.length - 1]; };
 
-const BASE_NAMES = {
-  off: null, helmet: ['Helm', 'Greathelm', 'Hood', 'Crown', 'Visage'], chest: ['Hauberk', 'Breastplate', 'Robe', 'Brigandine', 'Cuirass'],
-  gloves: ['Gauntlets', 'Grips', 'Handwraps', 'Bracers'], legs: ['Greaves', 'Legplates', 'Leggings', 'Tassets'], boots: ['Sabatons', 'Treads', 'Boots', 'Striders'],
-  belt: ['Girdle', 'Sash', 'Warbelt', 'Cord'], ring1: ['Band', 'Signet', 'Loop', 'Ring'], necklace: ['Choker', 'Chain', 'Torc', 'Pendant'], amulet: ['Talisman', 'Charm', 'Idol', 'Sigil'],
-};
-const PREFIX = ['Worn', 'Sturdy', 'Fine', 'Grand', 'Exalted', 'Mythic', 'Ancient'];
-const OFF_KIND = { warrior: 'shield', paladin: 'shield', mage: 'focus', warlock: 'focus', ranger: 'quiver' };
-
-// implicit stats per slot (before rarity/enhance multipliers)
-export function implicit(slot, ilvl, cls) {
-  const s = S(ilvl);
-  switch (slot) {
-    case 'main': return { attack: 5 * s };
-    case 'off': return OFF_KIND[cls] === 'shield' ? { armour: 6 * s, hp: 5 * s } : OFF_KIND[cls] === 'quiver' ? { attack: 1.2 * s, crit: 3 } : { attack: 1 * s, hp: 4 * s };
-    case 'helmet': return { hp: 8 * s, armour: 4 * s };
-    case 'chest': return { hp: 14 * s, armour: 7 * s };
-    case 'gloves': return { hp: 4 * s, armour: 3 * s, attack: 0.4 * s };
-    case 'legs': return { hp: 10 * s, armour: 5 * s };
-    case 'boots': return { hp: 6 * s, armour: 3 * s };
-    case 'belt': return { hp: 9 * s };
-    case 'ring1': return { attack: 0.7 * s };
-    case 'necklace': return { critDmg: 10, hp: 3 * s };
-    case 'amulet': return { allAttr: 3 * attrScale(ilvl) };
-  }
-  return {};
+export function rollRarity(floor, find = 0) {
+  const w = RARITY_WEIGHTS.map((x, i) => x * Math.pow(1 + floor / 70, i) * (i ? 1 + find / 100 : 1));
+  let r = Math.random() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < w.length; i++) { r -= w[i]; if (r <= 0) return i; }
+  return 0;
 }
-const pctScale = (ilvl) => 0.6 + ilvl / 100;
-export function affixValue(key, ilvl, q) {
-  const a = AFFIX[key];
-  const base = a.r[0] + (a.r[1] - a.r[0]) * q;
-  if (a.flat) return base * S(ilvl);
-  if (a.attr) return base * attrScale(ilvl);
-  return base * pctScale(ilvl);
-}
-
-export function rollRarity(mf = 0, ilvl = 1, opts = {}) {
-  const w = RARITY_WEIGHTS.map((x, i) => (i === 0 ? x : x * (1 + (mf / 100) * (0.5 + i * 0.3))));
-  if (ilvl < 60 && !opts.forceLeg) { w[4] = 0; w[5] = 0; w[6] = 0; }
-  if (ilvl < 70) w[5] = 0;
-  if (!opts.ancient) w[6] = 0;
-  if (opts.minRarity) for (let i = 0; i < opts.minRarity; i++) w[i] = 0;
-  return wpick([0, 1, 2, 3, 4, 5, 6], (i) => w[i]);
-}
-
-export function generateItem(ilvl, opts = {}) {
-  const slot = opts.slot || pick(SLOTS.filter((s) => s !== 'ring2'));
-  const type = slot === 'ring2' ? 'ring1' : slot;
-  const cls = opts.cls || 'warrior';
-  const rarity = opts.rarity ?? rollRarity(opts.mf || 0, ilvl, opts);
-  const R = RARITIES[rarity];
-  const pool = AFFIXES.filter((a) => !(type === 'main' && a.key === 'armour'));
+export function makeItem(ilvl, o = {}) {
+  const base = o.base || pick(BASE_KEYS);
+  const rarity = o.rarity ?? rollRarity(ilvl, o.find || 0);
   const affixes = [];
-  const used = new Set();
-  for (let i = 0; i < R.affixes; i++) {
-    const a = wpick(pool.filter((x) => !used.has(x.key)), (x) => x.w);
-    used.add(a.key);
-    affixes.push({ key: a.key, q: 0.35 + Math.random() * 0.65 });
+  const pool = [...AFFIX_KEYS];
+  for (let i = 0; i < RARITIES[rarity].affixes; i++) {
+    const k = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+    const a = AFFIXES[k];
+    affixes.push({ k, v: +(a.r[0] + Math.random() * (a.r[1] - a.r[0])).toFixed(1) });
   }
-  let unique = null;
-  if (R.unique) unique = opts.unique || pick(UNIQUE_KEYS);
-  let name;
-  if (type === 'main') name = pick(CLASSES[cls].weapon);
-  else if (type === 'off') name = CLASSES[cls].off;
-  else name = pick(BASE_NAMES[type]);
-  name = opts.name || (unique ? `${name} ${UNIQUES[unique].name}` : `${PREFIX[rarity]} ${name}`);
-  return {
-    id: newId(), slot: type, ilvl, rarity, name, cls, affixes, unique, bonus: opts.bonus || null,
-    enhance: 0, refine: 0, enchant: null, sockets: Array(R.sockets).fill(null), awakened: false, locked: false, isNew: true,
-  };
+  return { id: newId(), base, slot: BASES[base].slot, ilvl: Math.max(1, Math.round(ilvl)), rarity, affixes, up: 0, locked: false, isNew: true };
 }
-
-// full stat map for an item
 export function itemStats(it) {
-  const R = RARITIES[it.rarity];
-  const mult = R.mult * (1 + 0.06 * it.enhance) * (it.awakened ? 1.25 : 1);
+  const b = BASES[it.base], R = RARITIES[it.rarity], s = S(it.ilvl), up = 1 + 0.1 * it.up;
   const out = {};
-  const add = (k, v) => { out[k] = (out[k] || 0) + v; };
-  for (const [k, v] of Object.entries(implicit(it.slot, it.ilvl, it.cls))) add(k, v * mult);
-  for (const a of it.affixes) add(a.key, affixValue(a.key, it.ilvl, Math.min(1, a.q + it.refine * 0.06)) * mult);
-  if (it.enchant) add(it.enchant.key, affixValue(it.enchant.key, it.ilvl, 0.6) * (1 + 0.25 * (it.enchant.rank - 1)) * mult);
-  if (it.bonus) for (const [k, v] of Object.entries(it.bonus)) add(k, v);
-  if (it.unique && UNIQUES[it.unique].stat) for (const [k, v] of Object.entries(UNIQUES[it.unique].stat)) add(k, v);
-  for (const g of it.sockets) if (g) { const t = g.slice(0, -1), tier = +g.slice(-1); add(GEMS[t].stat, gemValue(t, tier)); if (GEMS[t].stat2) add(GEMS[t].stat2, gemValue(t, tier)); }
+  for (const [k, v] of Object.entries(b.s)) {
+    if (k === 'attack' || k === 'hp' || k === 'armor') out[k] = v * SLOT_BASE[k] * s * R.mult * up;
+    else out[k] = v * (1 + it.rarity * 0.25);
+  }
+  for (const a of it.affixes) out[a.k] = (out[a.k] || 0) + a.v * (1 + it.up * 0.05);
   return out;
 }
-
-export function fmt(n) {
-  if (n === undefined || n === null || isNaN(n)) return '0';
-  if (Math.abs(n) < 1000) return (Math.abs(n) < 10 && n % 1 ? n.toFixed(1) : Math.round(n)).toString();
-  const u = ['K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx'];
-  let i = -1; while (Math.abs(n) >= 1000 && i < u.length - 1) { n /= 1000; i++; }
-  return (Math.abs(n) < 100 ? n.toFixed(1) : Math.round(n)) + u[i];
-}
-export function statLine(k, v) {
-  const name = STAT_NAMES[k] || k;
-  if (PCT_STATS.has(k)) return `+${v < 10 ? v.toFixed(1) : Math.round(v)}% ${name}`;
-  return `+${fmt(v)} ${name}`;
+export const itemName = (it) => `${it.rarity >= 4 ? 'Legendary ' : it.rarity === 3 ? 'Epic ' : it.rarity === 2 ? 'Rare ' : it.rarity === 1 ? 'Fine ' : ''}${BASES[it.base].name}${it.up ? ` +${it.up}` : ''}`;
+export const itemValue = (it, haggle = 0) => Math.round(3 * S(it.ilvl) * RARITIES[it.rarity].value * (1 + 0.2 * it.up) * (1 + haggle * 0.06));
+export const upgradeCost = (it) => Math.round(8 * S(it.ilvl) * Math.sqrt(RARITIES[it.rarity].value) * Math.pow(it.up + 1, 1.6));
+export const mergeKey = (it) => `${it.base}|${it.rarity}`;
+export function mergeItems(items) {
+  const [a] = items;
+  const it = makeItem(Math.max(...items.map((x) => x.ilvl)), { base: a.base, rarity: Math.min(RARITIES.length - 1, a.rarity + 1) });
+  it.up = Math.max(...items.map((x) => x.up));
+  return it;
 }
 
-// ---- upgrade costs (nothing here destroys items) ----
-const matFor = (ilvl) => (ilvl >= 50 ? 'mythril' : 'iron');
-export const ENHANCE_MAX = 15;
-export function enhanceCost(it) {
-  const n = it.enhance + 1;
-  return { gold: Math.round(25 * S(it.ilvl) * Math.pow(n, 1.6) * (1 + it.rarity * 0.3)), [matFor(it.ilvl)]: Math.ceil(n * 1.5) };
+export const armorReduction = (armor, lvl) => Math.min(0.75, armor / (armor + 20 * Math.pow(S(lvl), 1.15)));
+export function heroStats(state, gear = state.gear) {
+  const L = state.level, T = state.training, look = LOOKS[state.look] || LOOKS.paladin, m = look.mods;
+  const add = {};
+  for (const sl of SLOTS) { const it = gear[sl]; if (!it) continue; for (const [k, v] of Object.entries(itemStats(it))) add[k] = (add[k] || 0) + v; }
+  const attack = (2 + S(L)) * 1 + (add.attack || 0);
+  const hp = 60 + 10 * S(L) + (add.hp || 0);
+  const armor = 2 * S(L) + (add.armor || 0);
+  const st = {
+    lv: L, range: look.range,
+    attack: attack * (1 + ((add.attackPct || 0) + T.str * 6 + (m.dmgPct || 0)) / 100),
+    hp: hp * (1 + ((add.hpPct || 0) + T.vit * 7 + (m.hpPct || 0)) / 100),
+    armor: armor * (1 + ((add.armorPct || 0) + (m.armorPct || 0)) / 100),
+    speed: Math.max(0.4, 1 + ((add.speed || 0) + T.agi * 3 + (m.speedPct || 0)) / 100),
+    crit: Math.min(60, 5 + (add.crit || 0) + T.agi * 0.5), critDmg: 60,
+    lifesteal: add.lifesteal || 0,
+    gold: (add.gold || 0) + T.haggle * 4, find: (add.find || 0) + T.loot * 3,
+    bag: 12 + T.loot * 2, potionHeal: 35 + T.alch * 4, belt: 5 + Math.floor(T.alch / 2),
+    spell: 1 + (m.spellPct || 0) / 100, haggle: T.haggle,
+  };
+  const dps = st.attack * st.speed * (1 + st.crit / 100 * st.critDmg / 100);
+  st.power = Math.round(Math.sqrt(dps * st.hp * (1 + st.armor / (20 * Math.pow(S(L), 1.15)))));
+  return st;
 }
-export const REFINE_MAX = 5;
-export const refineCost = (it) => ({ dust: 6 * (it.refine + 1) * (1 + it.rarity), gold: Math.round(10 * S(it.ilvl) * (it.refine + 1)) });
-export const ENCHANT_MAX = 5;
-export const enchantCost = (it) => ({ dust: 10 * ((it.enchant ? it.enchant.rank : 0) + 1) * (1 + it.rarity * 0.5) | 0, gold: Math.round(15 * S(it.ilvl)) });
-export const awakenItemCost = (it) => ({ essence: 8 + it.rarity * 3, cores: 4 + it.rarity });
-export const canAwaken = (it) => it.rarity >= 4 && it.enhance >= ENHANCE_MAX && !it.awakened;
-export function salvageValue(it) {
-  const out = { dust: 1 + it.rarity * 2 + Math.floor(it.enhance / 3), gold: Math.round(2 * S(it.ilvl) * (1 + it.rarity)) };
-  if (it.rarity <= 2) out[matFor(it.ilvl)] = 1 + Math.floor(it.rarity / 2);
-  if (it.rarity >= 3) out.mythril = it.rarity - 1;
-  if (it.rarity >= 4) out.cores = [0, 0, 0, 0, 1, 2, 4][it.rarity];
-  if (it.rarity >= 5) out.essence = it.rarity - 3;
-  return out;
-}
-
-export function makeInscription(ilvl, tag) {
-  tag = tag || pick(INSCR_KEYS);
-  const tier = Math.min(5, Math.floor(ilvl / 20));
-  const st = INSCR_TAGS[tag].stat;
-  const v = (st === 'leech' ? 0.6 : 5) * (1 + ilvl / 50) * (0.8 + Math.random() * 0.4);
-  return { id: newId(), tag, tier, stat: st, v };
-}
+export const itemPower = (state, it) => heroStats(state, { ...state.gear, [it.slot]: it }).power - heroStats(state).power;
+export { UPGRADE_MAX };

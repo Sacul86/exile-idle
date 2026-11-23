@@ -1,7 +1,7 @@
 {
-  "name": "Eternal Ascent",
-  "short_name": "Eternal Ascent",
-  "description": "Solo-hero fantasy auto-battler",
+  "name": "Delve & Loot",
+  "short_name": "Delve & Loot",
+  "description": "Idle dungeon diver: push deeper or bank your loot",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

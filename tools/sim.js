@@ -1,33 +1,27 @@
-// Headless balance sim: node tools/sim.js [class] [hours]
-import { newState } from '../js/systems.js';
-import { tick, startRun, leaveRun } from '../js/game.js';
-import { optimiseAll } from '../js/optimize.js';
-import { stats } from '../js/systems.js';
-import { REGIONS, MAX_STAGE, S } from '../js/data.js';
+// Headless balance sim for Delve & Loot: node tools/sim.js [look] [hours]
+import { newState, tick, stats, smartSpend, learnSpell, levelSpell, sellBelow } from '../js/game.js';
+import { SPELL_KEYS } from '../js/data.js';
 
-const cls = process.argv[2] || 'warrior';
-const hours = +(process.argv[3] || 6);
-const s = newState(cls);
-const DT = 0.1;
-let t = 0, nextOpt = 0, nextLog = 0, nextAct = 1800;
-const log = [];
+const look = process.argv[2] || 'paladin', hours = +(process.argv[3] || 6);
+const s = newState(look); s.picked = true;
+let t = 0, nextLog = 0, lastTownSpend = -1;
+const every = +(process.env.LOGEVERY || 1800);
+const out = [];
 const t0 = Date.now();
 while (t < hours * 3600) {
-  tick(s, DT); t += DT;
-  if (s.level >= 10 && !s.spec) s.spec = Object.values({ warrior: 'berserker', mage: 'pyromancer', ranger: 'deadeye', warlock: 'necromancer', paladin: 'templar' })[0] && ({ warrior: 'berserker', mage: 'pyromancer', ranger: 'deadeye', warlock: 'necromancer', paladin: 'templar' })[cls];
-  if (t >= nextOpt) { optimiseAll(s); nextOpt = t + 120; }
-  if (s.run?.done) { if (s.run.kind === 'dungeon' && s.run.win && process.env.VERBOSE) console.log('  dungeon', s.run.key, s.run.tier, s.run.win); leaveRun(s); }
-  if (t >= nextAct && !s.run) {
-    nextAct = t + 1800;
-    if (s.level >= 30) startRun(s, 'dungeon', 'forge', s.dungeonTier.forge);
-    else if (s.level >= 15) startRun(s, 'caverns');
+  tick(s, 0.1); t += 0.1;
+  if (!s.run && s.totals.dives !== lastTownSpend) {
+    lastTownSpend = s.totals.dives;
+    sellBelow(s, 2);
+    for (const k of SPELL_KEYS) learnSpell(s, k);
+    smartSpend(s);
+    for (const k of s.slots) levelSpell(s, k);
   }
   if (t >= nextLog) {
-    nextLog = t + (+process.env.LOGEVERY || 1800);
-    const st = stats(s);
-    const dps = st.attack * (1 + st.typePct / 100) * st.more * st.aspd * (1 + st.crit / 100 * st.critDmg / 100);
-    log.push(`dps/S ${(dps / S(s.level)).toFixed(1)} hp/S ${(st.hp / S(s.level)).toFixed(0)} arm ${(st.armour/S(s.level)).toFixed(0)} | ${(t / 3600).toFixed(1)}h L${s.level} stage ${Math.ceil(s.stage / 10)}-${((s.stage - 1) % 10) + 1} (max ${s.maxStage}) pow ${st.power} hp ${Math.round(st.hp)} atk ${Math.round(st.attack)} deaths ${s.totals.deaths} kills ${s.totals.kills} gold ${Math.round(s.gold)} bag ${s.bag.length} tower ${s.towerBest}`);
+    nextLog = t + every;
+    const st = stats(s), ld = s.lastDive;
+    out.push(`${(t / 3600).toFixed(1)}h L${s.level} deepest ${s.deepest} last ${ld ? ld.from + '->' + ld.to + ' (' + ld.why + ')' : '-'} pow ${st.power} gold ${s.gold} dives ${s.totals.dives} deaths ${s.totals.deaths} kills ${s.totals.kills} stash ${s.stash.length} pots ${s.potions} spells ${Object.keys(s.spells).length} train ${Object.values(s.training).join('/')}`);
   }
 }
-console.log(cls, log.join('\n'), `\n(${((Date.now() - t0) / 1000).toFixed(1)}s real)`);
+console.log(look + '\n' + out.join('\n') + `\n(${((Date.now() - t0) / 1000).toFixed(1)}s)`);
 if (process.env.DUMP) { const { combat, _st, ...rest } = s; (await import('fs')).writeFileSync(process.env.DUMP, JSON.stringify(rest)); }
