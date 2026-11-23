@@ -183,3 +183,25 @@ input[type=range] { width: 120px; vertical-align: middle; }
 .toast { background: rgba(24, 18, 30, .95); border: 1px solid var(--line); border-radius: 18px; padding: 6px 14px; font-size: .9em; transition: opacity .4s, transform .4s; max-width: 92%; }
 .toast.big { border-color: var(--gold); box-shadow: 0 0 12px #e0b45a55; }
 .toast.out { opacity: 0; transform: translateY(-10px); }
+
+/* full-screen isometric battle */
+body.battle-full #hud { display: none; }
+body.battle-full #view { padding: 0; overflow: hidden; }
+.bf { position: relative; height: 100%; }
+.arena.full { position: absolute; inset: 0; height: auto; border: 0; border-radius: 0; margin: 0; }
+.bf-top, .bf-bottom, .bf-loot { position: absolute; left: 0; right: 0; pointer-events: none; z-index: 3; }
+.bf-top { top: 0; padding: calc(6px + var(--safe-t)) 8px 0; background: linear-gradient(rgba(8,6,12,.85), rgba(8,6,12,.55) 70%, rgba(8,6,12,0)); }
+.bf-top button, .bf-bottom button, .bf-bottom .sk, .goal-chip .goal { pointer-events: auto; }
+.mini-hud { display: flex; align-items: center; gap: 8px; font-size: .88em; margin-bottom: 4px; }
+.mini-hud .bar { height: 7px; } .mini-hud b { margin-left: 2px; }
+.ic-btn { background: none; border: 0; font-size: 17px; padding: 0 2px; }
+.bf-zone .zone .name { font-size: 1em; } .bf-zone .zone .small { font-size: .78em; }
+.bf-zone .btn.small { padding: 4px 8px; }
+.goal-chip .goal { display: inline-block; margin-top: 5px; padding: 3px 10px; border-radius: 12px; background: rgba(40,30,20,.75); border: 1px solid #6a5230; font-size: .8em; }
+.bf-top .bossbar { position: static; margin-top: 6px; }
+.bf-loot { top: auto; bottom: 200px; left: 8px; right: auto; max-width: 60%; font-size: .8em; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+.bf-bottom { bottom: 0; padding: 0 8px 8px; background: linear-gradient(rgba(8,6,12,0), rgba(8,6,12,.6) 30%, rgba(8,6,12,.85)); }
+.bf-bottom .herobars { margin: 0 0 6px; }
+.bf-bottom .skillbar .sk { background: radial-gradient(rgba(46,38,56,.9), rgba(26,21,32,.9)); }
+.bf-btns { display: flex; gap: 8px; margin-top: 6px; }
+.bf-btns .btn { flex: 1; padding: 7px 10px; }

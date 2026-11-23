@@ -11,7 +11,7 @@ import { optimiseAll } from './optimize.js';
 import { Arena, setSkillNamer, fmtN } from './fx.js';
 import { Scene3D } from './scene3d.js';
 
-const VERSION = '2026.11.23-ea6';
+const VERSION = '2026.11.23-ea7';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const arena = new Arena();
@@ -93,20 +93,36 @@ function renderBattle() {
       <button class="btn small danger" data-act="leave">Leave</button></div>`
     : `<div class="zone"><div><div class="name">${reg.name}</div><div class="muted small">Stage <b>${stageName(state.stage)}</b> · monster lvl ${stageLevel(state.stage)} · best ${stageName(state.maxStage)}</div></div>
       <div class="stage-ctl"><button class="btn small" data-act="stage" data-d="-1">◀</button><button class="btn small ${state.autoAdvance ? 'toggle on' : 'toggle'}" data-act="auto">Auto ${state.autoAdvance ? 'on' : 'off'}</button><button class="btn small" data-act="stage" data-d="1">▶</button></div></div>`;
-  view.innerHTML = `
+  const full = use3D();
+  document.body.classList.toggle('battle-full', full);
+  const bossbar = `<div class="bossbar hidden" id="bossbar"><div class="bb-name" id="bb-name"></div><div class="bar boss"><div class="fill" id="bb-fill"></div><span id="bb-text"></span></div><div class="tele hidden" id="tele"><div class="fill" id="tele-fill"></div><span id="tele-text"></span></div></div>`;
+  const bars = `<div class="herobars"><div class="bar hp"><div class="fill" id="h-hp"></div><div class="shield" id="h-sh"></div><span id="h-hp-t"></span></div><div class="bar res"><div class="fill" id="h-res"></div><span id="h-res-t"></span></div></div>`;
+  const skills = `<div class="skillbar" id="skillbar">${SLOT_ROLES.map((ro) => `<div class="sk" data-role="${ro.id}" data-act="gotoSkills"><div class="ic"></div><div class="cd"></div><div class="lbl"></div></div>`).join('')}</div>`;
+  if (full) {
+    view.innerHTML = `<div class="bf">
+      <div class="arena iso full" id="arena"></div>
+      <div class="bf-top">
+        <div class="mini-hud"><span class="lvl">${CLASSES[state.cls].icon} Lv <b id="m-lvl"></b></span><div class="bar xp"><div class="fill" id="m-xp"></div></div><span>🪙<b id="m-gold"></b></span><span>⚡<b id="m-pow"></b></span><button class="ic-btn" data-act="settings">⚙️</button></div>
+        <div class="bf-zone">${head}<div class="waves" id="waves"></div></div>
+        <div class="goal-chip" id="goals"></div>
+        ${bossbar}
+      </div>
+      <div class="bf-loot lootlog" id="lootlog"></div>
+      <div class="bf-bottom">${bars}${skills}
+        <div class="bf-btns"><button class="btn primary" data-act="optimise">⚡ Optimise</button><button class="btn" data-act="tab" data-tab="activities">🗺️ Activities</button></div>
+      </div></div>`;
+  } else {
+    view.innerHTML = `
     <div class="panel tight">${head}<div class="waves" id="waves"></div></div>
-    <div class="arena ${use3D() ? 'iso' : ''}" id="arena"><div class="bossbar hidden" id="bossbar"><div class="bb-name" id="bb-name"></div><div class="bar boss"><div class="fill" id="bb-fill"></div><span id="bb-text"></span></div><div class="tele hidden" id="tele"><div class="fill" id="tele-fill"></div><span id="tele-text"></span></div></div></div>
-    <div class="herobars">
-      <div class="bar hp"><div class="fill" id="h-hp"></div><div class="shield" id="h-sh"></div><span id="h-hp-t"></span></div>
-      <div class="bar res"><div class="fill" id="h-res"></div><span id="h-res-t"></span></div>
-    </div>
-    <div class="skillbar" id="skillbar">${SLOT_ROLES.map((ro) => `<div class="sk" data-role="${ro.id}" data-act="gotoSkills"><div class="ic"></div><div class="cd"></div><div class="lbl"></div></div>`).join('')}</div>
+    <div class="arena" id="arena">${bossbar}</div>
+    ${bars}${skills}
     <div class="row2">
       <button class="btn primary grow" data-act="optimise">⚡ Optimise</button>
       <button class="btn grow" data-act="tab" data-tab="activities">🗺️ Activities</button>
     </div>
     <div class="panel"><h3>Next goals</h3><div id="goals"></div></div>
     <div class="panel"><h3>Recent loot</h3><div id="lootlog" class="lootlog"></div></div>`;
+  }
   if (use3D()) { scene3d.opt(state.settings); scene3d.mount($('#arena')); } else arena.mount($('#arena'));
   refreshGoals(); refreshLootLog();
   battleTick(true);
@@ -124,8 +140,8 @@ function runSub(r) {
   if (r.kind === 'tower') return `Best floor ${state.towerBest} · milestone every 10 floors`;
   return `Level ${r.lvl}`;
 }
-function refreshGoals() { const el = $('#goals'); if (el) el.innerHTML = sys.nextGoals(state).slice(0, 3).map((g) => `<div class="goal" data-act="tab" data-tab="${g.tab}">➜ ${esc(g.text)}</div>`).join(''); }
-function refreshLootLog() { const el = $('#lootlog'); if (el) el.innerHTML = lootLog.length ? lootLog.map((l) => `<div style="color:${rc(l.rarity)}">${esc(l.name)} <span class="muted">${l.res === 'equipped' ? '✓ equipped' : l.res === 'salvaged' ? 'salvaged' : 'to bag'}</span></div>`).join('') : '<div class="muted">Nothing yet.</div>'; }
+function refreshGoals() { const el = $('#goals'); if (el) el.innerHTML = sys.nextGoals(state).slice(0, el.classList.contains('goal-chip') ? 1 : 3).map((g) => `<div class="goal" data-act="tab" data-tab="${g.tab}">➜ ${esc(g.text)}</div>`).join(''); }
+function refreshLootLog() { const el = $('#lootlog'); if (el) el.innerHTML = lootLog.length ? lootLog.slice(0, el.classList.contains('bf-loot') ? 4 : 6).map((l) => `<div style="color:${rc(l.rarity)}">${esc(l.name)} <span class="muted">${l.res === 'equipped' ? '✓ equipped' : l.res === 'salvaged' ? 'salvaged' : 'to bag'}</span></div>`).join('') : (el.classList.contains('bf-loot') ? '' : '<div class="muted">Nothing yet.</div>'); }
 
 let lastBattleDom = 0;
 function battleTick(force) {
@@ -137,6 +153,13 @@ function battleTick(force) {
   const h = c.hero, S = c.st;
   const hpk = Math.max(0, h.hp / S.hp);
   const hp = $('#h-hp'); if (!hp) return;
+  const ml = $('#m-lvl');
+  if (ml) {
+    const capped = state.level >= LEVEL_CAP, need = capped ? masteryXp(state.mastery) : xpToNext(state.level);
+    ml.textContent = capped ? `${LEVEL_CAP}·M${state.mastery}` : state.level;
+    $('#m-xp').style.width = Math.min(100, ((capped ? state.masteryXp : state.xp) / need) * 100) + '%';
+    $('#m-gold').textContent = fmt(state.gold); $('#m-pow').textContent = fmt(S.power);
+  }
   hp.style.width = hpk * 100 + '%';
   $('#h-sh').style.width = Math.min(100, (h.shield / S.hp) * 100) + '%';
   $('#h-hp-t').textContent = h.dead > 0 ? `Respawning ${Math.ceil(h.dead)}s` : `${fmt(h.hp)} / ${fmt(S.hp)}${h.shield > 0 ? ` (+${fmt(h.shield)})` : ''}`;
@@ -477,6 +500,7 @@ function drainEvents() {
 // ---------------- tabs & actions ----------------
 function switchTab(t) {
   tab = t;
+  if (t !== 'battle') document.body.classList.remove('battle-full');
   if (state) state.input = null;
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === t);
   render();

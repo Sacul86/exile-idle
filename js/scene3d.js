@@ -140,8 +140,9 @@ export class Scene3D {
     this.renderer.setPixelRatio(this.S?.effects === 'reduced' ? 1 : dpr);
     this.renderer.setSize(w, h);
     this.ov.width = w * dpr; this.ov.height = h * dpr; this.ov.style.width = w + 'px'; this.ov.style.height = h + 'px'; this.dpr = dpr;
-    const view = { near: 6.4, mid: 8.6, far: 10.8 }[this.S?.zoom || 'mid'] || 8.6, asp = w / Math.max(1, h);
-    this.camera.left = -view * asp; this.camera.right = view * asp; this.camera.top = view; this.camera.bottom = -view;
+    // size the view by width so characters stay the same size on tall screens; nudge the hero above centre
+    const halfW = ({ near: 5.6, mid: 7.4, far: 9.4 }[this.S?.zoom || 'mid'] || 7.4), asp = w / Math.max(1, h), halfH = halfW / asp;
+    this.camera.left = -halfW; this.camera.right = halfW; this.camera.top = halfH * 0.82; this.camera.bottom = -halfH * 1.18;
     this.camera.updateProjectionMatrix();
   }
 
@@ -663,10 +664,10 @@ export class Scene3D {
       if (b.t <= 0) this.banner = null;
       else {
         x.globalAlpha = Math.min(1, b.t * 3);
-        x.fillStyle = 'rgba(0,0,0,0.55)'; x.fillRect(0, h * 0.2, w, 46);
+        x.fillStyle = 'rgba(0,0,0,0.55)'; x.fillRect(0, h * 0.3, w, 46);
         x.font = `800 ${Math.round(20 * fs)}px Cinzel, Georgia, serif`; x.fillStyle = b.c; x.strokeStyle = '#000'; x.lineWidth = 4;
-        x.strokeText(b.text, w / 2, h * 0.2 + 24); x.fillText(b.text, w / 2, h * 0.2 + 24);
-        if (b.sub) { x.font = `600 ${Math.round(11 * fs)}px system-ui`; x.fillStyle = '#e8dcc8'; x.fillText(b.sub, w / 2, h * 0.2 + 40); }
+        x.strokeText(b.text, w / 2, h * 0.3 + 24); x.fillText(b.text, w / 2, h * 0.3 + 24);
+        if (b.sub) { x.font = `600 ${Math.round(11 * fs)}px system-ui`; x.fillStyle = '#e8dcc8'; x.fillText(b.sub, w / 2, h * 0.3 + 40); }
         x.globalAlpha = 1;
       }
     }
@@ -681,7 +682,7 @@ export class Scene3D {
       g.addColorStop(0, 'rgba(180,0,0,0)'); g.addColorStop(1, `rgba(180,0,0,${(0.35 - lifeK) * (1.2 + Math.sin(this.t * 6) * 0.3)})`);
       x.fillStyle = g; x.fillRect(0, 0, w, h);
     }
-    if (!this.hintShown && this.loaded) { this.hintT = (this.hintT || 0) + dt; if (this.hintT < 6) { x.globalAlpha = Math.min(1, (6 - this.hintT)); x.font = '600 11px system-ui'; x.fillStyle = '#e0d0b0'; x.fillText('Drag anywhere to move · let go to auto-fight', w / 2, h - 10); x.globalAlpha = 1; } else this.hintShown = true; }
+    if (!this.hintShown && this.loaded) { this.hintT = (this.hintT || 0) + dt; if (this.hintT < 6) { x.globalAlpha = Math.min(1, (6 - this.hintT)); x.font = '600 11px system-ui'; x.fillStyle = '#e0d0b0'; x.fillText('Drag anywhere to move · let go to auto-fight', w / 2, h * 0.62); x.globalAlpha = 1; } else this.hintShown = true; }
   }
   drawStatuses(e, cx, y) {
     const x = this.octx;
