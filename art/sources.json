@@ -1,5 +1,155 @@
 [
-  { "id": "hero_mage", "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/ec24074e-057a-4e1c-bcb3-97e2d269de6b.png", "grid": [1, 1], "dir": "heroes", "names": ["witch"], "size": 384 },
-  { "id": "heroes_a", "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/16ef5adb-21d6-424b-93d7-044129f6a234.png", "grid": [2, 2], "dir": "heroes", "names": ["marauder", "duelist", "templar", "druid"], "size": 384 },
-  { "id": "heroes_b", "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/6e812c81-77ca-41e4-bebc-3641fa4d8d8f.png", "grid": [2, 1], "dir": "heroes", "names": ["ranger", "shadow"], "size": 384 }
+ {
+  "id": "hero_mage",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/ec24074e-057a-4e1c-bcb3-97e2d269de6b.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "heroes",
+  "names": [
+   "witch"
+  ],
+  "size": 384
+ },
+ {
+  "id": "heroes_a",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/16ef5adb-21d6-424b-93d7-044129f6a234.png",
+  "grid": [
+   2,
+   2
+  ],
+  "dir": "heroes",
+  "names": [
+   "marauder",
+   "duelist",
+   "templar",
+   "druid"
+  ],
+  "size": 384
+ },
+ {
+  "id": "heroes_b",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/6e812c81-77ca-41e4-bebc-3641fa4d8d8f.png",
+  "grid": [
+   2,
+   1
+  ],
+  "dir": "heroes",
+  "names": [
+   "ranger",
+   "shadow"
+  ],
+  "size": 384
+ },
+ {
+  "id": "img4",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/e8d9d188-d698-446e-975e-df93dbccd566.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "tmp",
+  "names": []
+ },
+ {
+  "id": "img5",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/a525dc7a-d345-4881-bd27-e6d1d0cdd573.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "tmp",
+  "names": []
+ },
+ {
+  "id": "img6",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/4cd0ac20-a48d-4e32-a582-546a69dfc847.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "tmp",
+  "names": []
+ },
+ {
+  "id": "img7",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/38d66d61-275e-4347-b889-3980d82f45a1.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "tmp",
+  "names": []
+ },
+ {
+  "id": "img8",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/ca838815-7508-4421-8976-779b2dd88fcf.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "tmp",
+  "names": []
+ },
+ {
+  "id": "img9",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/ce83b07e-5cc1-43ad-9227-ce51419c93f8.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "tmp",
+  "names": []
+ },
+ {
+  "id": "img10",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/a04b4229-bf66-49b1-83fa-3f5e6d28b47a.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "tmp",
+  "names": []
+ },
+ {
+  "id": "img11",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/7a1ef40d-ec95-4689-9169-2463668761c4.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "tmp",
+  "names": []
+ },
+ {
+  "id": "img12",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/0de4251e-d9af-4ccf-b1f4-a5bb0ab45553.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "tmp",
+  "names": []
+ },
+ {
+  "id": "img13",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/41e84a56-0d8d-4d65-875c-2c94dbeef053.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "tmp",
+  "names": []
+ },
+ {
+  "id": "img14",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/f96643be-20d8-4d70-b77d-4cd9d9b39a64.png",
+  "grid": [
+   1,
+   1
+  ],
+  "dir": "tmp",
+  "names": []
+ }
 ]

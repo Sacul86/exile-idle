@@ -1,30 +1,44 @@
-// Passive skill tree + classes. The tree is generated as a ring of six
-// class sectors (like PoE), connected by an inner and outer ring.
+// Passive skill tree + classes. The tree is a ring of seven class sectors,
+// connected by an inner ring, bridge notables and an outer ring.
 
+// Party roles
+export const ROLES = {
+  tank:   { name: 'Tank',   icon: '🛡️', desc: 'Enemies attack the tank. +40% Life, +30% Armour and Evasion.', bonus: { incLife: 40, incArmour: 30, incEvasion: 30 } },
+  healer: { name: 'Healer', icon: '✚',  desc: 'Heals the most injured ally whenever someone is hurt, otherwise attacks.', bonus: {} },
+  dps:    { name: 'DPS',    icon: '⚔️', desc: 'Damage dealer. 20% more Damage.', bonus: { moreDmg: 20 } },
+};
+export const ROLE_ORDER = ['tank', 'healer', 'dps'];
+
+const N_CLS = 7;
+const ang = (i) => -90 + i * (360 / N_CLS);
 export const CLASSES = [
-  { id: 'witch',    name: 'Witch',    icon: '🧙‍♀️', attr: 'INT',     angle: -90, color: '#5b8cff',
+  { id: 'witch',    name: 'Mage',      role: 'dps',    icon: '🧙', attr: 'INT',     angle: ang(0), color: '#5b8cff',
     desc: 'Elemental caster. Converts some physical damage to elemental.',
     bonus: { incEle: 20, convert: 0.25, resist: 5 } },
-  { id: 'shadow',   name: 'Shadow',   icon: '🥷',   attr: 'DEX/INT', angle: -30, color: '#3fc2b0',
-    desc: 'Critical strike specialist.',
-    bonus: { critChance: 40, critMulti: 20 } },
-  { id: 'ranger',   name: 'Ranger',   icon: '🏹',   attr: 'DEX',     angle: 30,  color: '#5cc46b',
-    desc: 'Fast and evasive.',
-    bonus: { aps: 10, incEvasion: 25, critChance: 15 } },
-  { id: 'duelist',  name: 'Duelist',  icon: '🤺',   attr: 'STR/DEX', angle: 90,  color: '#e0a040',
-    desc: 'Physical weapon master with leech.',
-    bonus: { incPhys: 15, aps: 5, leech: 0.5 } },
-  { id: 'marauder', name: 'Marauder', icon: '🪓',   attr: 'STR',     angle: 150, color: '#d0453a',
-    desc: 'Huge life pool and raw physical power.',
-    bonus: { incLife: 20, incPhys: 10, regenPct: 0.5 } },
-  { id: 'templar',  name: 'Templar',  icon: '⚜️',   attr: 'STR/INT', angle: 210, color: '#c58cff',
-    desc: 'Holy hybrid: armour, resistances and elemental damage.',
-    bonus: { incEle: 10, incArmour: 15, resist: 8, incLife: 8 } },
+  { id: 'shadow',   name: 'Assassin',  role: 'dps',    icon: '🥷', attr: 'DEX/INT', angle: ang(1), color: '#b46bff',
+    desc: 'Critical strike specialist with poisoned blades.',
+    bonus: { critChance: 60, critMulti: 40, incPhys: 20, aps: 5 } },
+  { id: 'ranger',   name: 'Ranger',    role: 'dps',    icon: '🏹', attr: 'DEX',     angle: ang(2), color: '#5cc46b',
+    desc: 'Fast and evasive archer.',
+    bonus: { aps: 20, incEvasion: 25, critChance: 25, incPhys: 35 } },
+  { id: 'druid',    name: 'Druid',     role: 'healer', icon: '🌿', attr: 'INT/DEX', angle: ang(3), color: '#8fd14f',
+    desc: 'Nature healer: mends the party over time and roots enemies.',
+    bonus: { incHeal: 20, regenPct: 0.5, incEle: 10 } },
+  { id: 'duelist',  name: 'Gladiator', role: 'tank',   icon: '🤺', attr: 'STR/DEX', angle: ang(4), color: '#e0a040',
+    desc: 'Shield-bearing tank who blocks, dodges and leeches.',
+    bonus: { block: 8, incArmour: 15, leech: 0.5 } },
+  { id: 'marauder', name: 'Warrior',   role: 'tank',   icon: '🪓', attr: 'STR',     angle: ang(5), color: '#d0453a',
+    desc: 'Armoured tank with a huge life pool.',
+    bonus: { incLife: 25, incArmour: 20, regenPct: 0.5 } },
+  { id: 'templar',  name: 'Templar',   role: 'healer', icon: '⚜️', attr: 'STR/INT', angle: ang(6), color: '#f2d64b',
+    desc: 'Holy healer: big party heals, shields and resistances.',
+    bonus: { incHeal: 25, resist: 8, incLife: 8 } },
 ];
 export const CLASS_BY_ID = Object.fromEntries(CLASSES.map((c) => [c.id, c]));
 
 export const STAT_TEXT = {
   incPhys: (v) => `+${v}% increased Physical Damage`,
+  incHeal: (v) => `+${v}% increased Healing`,
   incEle: (v) => `+${v}% increased Elemental Damage`,
   incAll: (v) => `+${v}% increased Damage`,
   aps: (v) => `+${v}% increased Attack Speed`,
@@ -45,14 +59,15 @@ export const STAT_TEXT = {
 
 // Rule-changing keystones
 export const KEYSTONES = {
-  resolute:   { name: 'Resolute Technique', icon: '🗿', lines: ['Your hits can never Critically Strike', '45% more Damage'] },
-  ironRefl:   { name: 'Iron Reflexes',      icon: '🛡️', lines: ['All Evasion is converted to Armour', '20% increased Armour'] },
-  acrobatics: { name: 'Acrobatics',         icon: '🤸', lines: ['Maximum chance to Evade is 85%', '30% more Evasion', '50% less Armour'] },
-  assassin:   { name: "Assassin's Mark",    icon: '🎯', lines: ['+120% to Critical Strike Multiplier', 'Non-critical hits deal 40% less Damage'] },
-  overload:   { name: 'Elemental Overload', icon: '⚡', lines: ['100% of Physical converted to Elemental', '30% more Elemental Damage'] },
+  resolute:   { name: 'Unwavering Strike',  icon: '🗿', lines: ['Your hits can never Critically Strike', '45% more Damage'] },
+  ironRefl:   { name: 'Iron Hide',          icon: '🛡️', lines: ['All Evasion is converted to Armour', '20% increased Armour'] },
+  acrobatics: { name: 'Wind Dancer',        icon: '🤸', lines: ['Maximum chance to Evade is 85%', '30% more Evasion', '50% less Armour'] },
+  assassin:   { name: "Death's Mark",       icon: '🎯', lines: ['+120% to Critical Strike Multiplier', 'Non-critical hits deal 40% less Damage'] },
+  overload:   { name: 'Elemental Conversion', icon: '⚡', lines: ['100% of Physical converted to Elemental', '30% more Elemental Damage'] },
   bulwark:    { name: 'Divine Bulwark',     icon: '✨', lines: ['+10% to maximum Elemental Resistance', 'Regenerate 1% of Life per second'] },
-  vaalPact:   { name: 'Vaal Pact',          icon: '🩸', lines: ['Life Leech is tripled', 'You have no Life Regeneration'] },
+  vaalPact:   { name: 'Blood Pact',         icon: '🩸', lines: ['Life Leech is tripled', 'You have no Life Regeneration'] },
   glass:      { name: 'Glass Cannon',       icon: '💎', lines: ['50% less maximum Life', '60% more Damage'] },
+  lifebloom:  { name: 'Lifebloom',          icon: '🌸', lines: ['Your heals are 60% stronger', 'You deal 30% less Damage'] },
 };
 
 // Per-class themes: [left wheel, spine (keystone), right wheel]. Each has two notables.
@@ -72,6 +87,11 @@ const BRANCHES = {
     { small: { incEvasion: 7 }, notable: ['Fleet Footed', { incEvasion: 25, aps: 4 }], notable2: ['Wind Walker', { incEvasion: 20, aps: 5 }], keystone: 'acrobatics' },
     { small: { aps: 2 }, notable: ['Rapid Assault', { aps: 8, incPhys: 8 }], notable2: ['Quickdraw', { aps: 10 }] },
   ],
+  druid: [
+    { small: { incHeal: 6 }, notable: ['Verdant Bloom', { incHeal: 20, regenPct: 0.3 }], notable2: ['Wild Growth', { incHeal: 15, incLife: 6 }] },
+    { small: { incLife: 3, regenPct: 0.1 }, notable: ['Heart of the Grove', { incLife: 10, regenPct: 0.5 }], notable2: ['Ancient Bark', { incArmour: 20, incLife: 6 }], keystone: 'lifebloom' },
+    { small: { incEle: 4 }, notable: ['Nature\'s Wrath', { incEle: 15, aps: 4 }], notable2: ['Thorn Lash', { incEle: 12, critChance: 12 }] },
+  ],
   duelist: [
     { small: { incPhys: 4, aps: 1 }, notable: ['Blade Dancer', { incPhys: 12, aps: 6 }], notable2: ['Swordmaster', { incPhys: 15, aps: 4 }] },
     { small: { incArmour: 5, incEvasion: 5 }, notable: ['Duellist\'s Guard', { incArmour: 15, incEvasion: 15, block: 4 }], notable2: ['Steel Dancer', { incArmour: 12, incEvasion: 12, incLife: 4 }], keystone: 'ironRefl' },
@@ -83,7 +103,7 @@ const BRANCHES = {
     { small: { incLife: 3 }, notable: ['Thick Skin', { incLife: 10, regenPct: 0.3 }], notable2: ['Bloodline', { incLife: 12 }] },
   ],
   templar: [
-    { small: { resist: 2, incLife: 2 }, notable: ['Sanctuary', { resist: 8, incLife: 8 }], notable2: ['Holy Ward', { resist: 10, incArmour: 8 }] },
+    { small: { incHeal: 4, resist: 1 }, notable: ['Sanctuary', { incHeal: 15, resist: 6, incLife: 4 }], notable2: ['Holy Ward', { incHeal: 12, resist: 8 }] },
     { small: { incEle: 3, incArmour: 4 }, notable: ['Holy Might', { incEle: 12, incArmour: 15 }], notable2: ['Righteous Fire', { incEle: 15, regenPct: 0.3 }], keystone: 'bulwark' },
     { small: { block: 1 }, notable: ['Bastion', { block: 6, incArmour: 15 }], notable2: ['Shield Wall', { block: 5, incLife: 6 }] },
   ],
@@ -91,15 +111,16 @@ const BRANCHES = {
 const INNER_UTIL = [{ goldFind: 6 }, { rarity: 5 }, { xpGain: 4 }];
 // Bridge notables between sector i and i+1, linking their wheels mid-tree
 const BRIDGE_NOTABLES = [
-  ['Arcane Assassin', { incEle: 10, critChance: 15 }],   // witch-shadow
-  ['Hunter\'s Gambit', { critChance: 15, aps: 5 }],      // shadow-ranger
-  ['Wind Blade', { aps: 6, incPhys: 10 }],               // ranger-duelist
-  ['Gladiator', { incPhys: 12, incLife: 6 }],            // duelist-marauder
-  ['Unbreakable', { incArmour: 20, incLife: 8 }],        // marauder-templar
-  ['Divine Fury', { incEle: 12, resist: 6 }],            // templar-witch
+  ['Arcane Assassin', { incEle: 10, critChance: 15 }],   // mage-assassin
+  ['Hunter\'s Gambit', { critChance: 15, aps: 5 }],      // assassin-ranger
+  ['Wild Hunt', { aps: 5, incHeal: 8, incEvasion: 10 }], // ranger-druid
+  ['Barkskin', { incArmour: 15, incHeal: 8, incLife: 5 }], // druid-gladiator
+  ['Gladiator\'s Will', { incPhys: 12, incLife: 6 }],    // gladiator-warrior
+  ['Unbreakable', { incArmour: 20, incLife: 8 }],        // warrior-templar
+  ['Divine Fury', { incEle: 12, resist: 6 }],            // templar-mage
 ];
 // Extra keystones on the outer ring between sectors
-const OUTER_KEYSTONES = { 3: 'vaalPact', 0: 'glass' };
+const OUTER_KEYSTONES = { 4: 'vaalPact', 0: 'glass' };
 
 const merge = (a, b) => {
   const o = { ...a };
@@ -118,7 +139,8 @@ function buildTree() {
   const nodes = {};
   const edges = [];
   const rad = (d) => (d * Math.PI) / 180;
-  const pos = (ang, r) => ({ x: +(Math.cos(rad(ang)) * r).toFixed(1), y: +(Math.sin(rad(ang)) * r).toFixed(1) });
+  const A = 360 / CLASSES.length / 60, R = 1.2; // angular / radial spread
+  const pos = (ang, r) => ({ x: +(Math.cos(rad(ang)) * r * R).toFixed(1), y: +(Math.sin(rad(ang)) * r * R).toFixed(1) });
   const add = (id, n) => { nodes[id] = { id, ...n, adj: [] }; return id; };
   const link = (a, b) => {
     if (nodes[a].adj.includes(b)) return;
@@ -136,17 +158,17 @@ function buildTree() {
     const th = c.angle, B = BRANCHES[c.id], id = (k) => `${c.id}_${k}`;
     const start = add(`start_${c.id}`, { kind: 'start', cls: c.id, name: c.name, icon: c.icon, stats: quarter(c.bonus), ...pos(th, 90) });
     // entry fan
-    const f = [0, 1, 2].map((i) => small(id(`f${i}`), B[i].small, c.id, pos(th + (i - 1) * 15, 150)));
+    const f = [0, 1, 2].map((i) => small(id(`f${i}`), B[i].small, c.id, pos(th + (i - 1) * 15 * A, 150)));
     f.forEach((n) => link(start, n));
     link(f[0], f[1]); link(f[1], f[2]);
     // wheels
     [0, 2].forEach((bi) => {
-      const ctr = pos(th + (bi - 1) * 15, 255);
+      const ctr = pos(th + (bi - 1) * 15 * A, 255);
       const centre = notable(id(`w${bi}c`), B[bi].notable, c.id, ctr);
       const ring = [];
       for (let k = 0; k < 6; k++) {
         const a = rad(k * 60 + th);
-        ring.push(small(id(`w${bi}_${k}`), B[bi].small, c.id, { x: +(ctr.x + Math.cos(a) * 40).toFixed(1), y: +(ctr.y + Math.sin(a) * 40).toFixed(1) }));
+        ring.push(small(id(`w${bi}_${k}`), B[bi].small, c.id, { x: +(ctr.x + Math.cos(a) * 42).toFixed(1), y: +(ctr.y + Math.sin(a) * 42).toFixed(1) }));
       }
       ring.forEach((n, k) => link(n, ring[(k + 1) % 6]));
       // centre reachable from the innermost and outermost ring nodes
@@ -161,17 +183,17 @@ function buildTree() {
     link(s1, nearest(wheels[`${c.id}_0`], nodes[s1])); link(s1, nearest(wheels[`${c.id}_2`], nodes[s1]));
     // outer arc
     const arcTheme = [0, 0, 1, 2, 2];
-    const arc = [-22, -11, 0, 11, 22].map((d, i) => small(id(`a${i}`), arcTheme[i] === 1 ? B[1].small : halve(merge(B[arcTheme[i]].small, B[1].small)), c.id, pos(th + d, 350)));
+    const arc = [-22, -11, 0, 11, 22].map((d, i) => small(id(`a${i}`), arcTheme[i] === 1 ? B[1].small : halve(merge(B[arcTheme[i]].small, B[1].small)), c.id, pos(th + d * A, 350)));
     arc.forEach((n, i) => i && link(arc[i - 1], n));
     link(s2, arc[2]);
     link(nearest(wheels[`${c.id}_0`], nodes[arc[1]]), arc[1]);
     link(nearest(wheels[`${c.id}_2`], nodes[arc[3]]), arc[3]);
     // side spur notables
-    link(arc[0], notable(id('sp0'), B[0].notable2, c.id, pos(th - 25, 405)));
-    link(arc[4], notable(id('sp2'), B[2].notable2, c.id, pos(th + 25, 405)));
+    link(arc[0], notable(id('sp0'), B[0].notable2, c.id, pos(th - 25 * A, 405)));
+    link(arc[4], notable(id('sp2'), B[2].notable2, c.id, pos(th + 25 * A, 405)));
     // keystone cluster
-    const na = small(id('ka'), B[1].small, c.id, pos(th - 7, 398));
-    const nb = small(id('kb'), B[1].small, c.id, pos(th + 7, 398));
+    const na = small(id('ka'), B[1].small, c.id, pos(th - 7 * A, 398));
+    const nb = small(id('kb'), B[1].small, c.id, pos(th + 7 * A, 398));
     const nt = notable(id('kn'), B[1].notable2, c.id, pos(th, 432));
     link(arc[2], na); link(arc[2], nb); link(na, nt); link(nb, nt);
     const ks = B[1].keystone;
@@ -182,23 +204,23 @@ function buildTree() {
     const n = CLASSES[(ci + 1) % CLASSES.length];
     const th = c.angle;
     // inner ring between class starts
-    const i1 = small(`inner_${ci}_0`, INNER_UTIL[ci % 3], null, pos(th + 20, 112));
-    const i2 = small(`inner_${ci}_1`, INNER_UTIL[(ci + 1) % 3], null, pos(th + 40, 112));
+    const i1 = small(`inner_${ci}_0`, INNER_UTIL[ci % 3], null, pos(th + 20 * A, 112));
+    const i2 = small(`inner_${ci}_1`, INNER_UTIL[(ci + 1) % 3], null, pos(th + 40 * A, 112));
     link(`start_${c.id}`, i1); link(i1, i2); link(i2, `start_${n.id}`);
     // bridge notable between this sector's right wheel and the next sector's left wheel
-    const bp = pos(th + 30, 292);
+    const bp = pos(th + 30 * A, 312);
     const br = notable(`bridge_${ci}`, BRIDGE_NOTABLES[ci], null, bp);
     link(br, nearest(wheels[`${c.id}_2`], bp));
     link(br, nearest(wheels[`${n.id}_0`], bp));
     // outer ring
     const stats = halve(merge(BRANCHES[c.id][2].small, BRANCHES[n.id][0].small));
-    const o = small(`outer_${ci}`, stats, null, pos(th + 30, 355));
+    const o = small(`outer_${ci}`, stats, null, pos(th + 30 * A, 362));
     link(`${c.id}_a4`, o); link(o, `${n.id}_a0`);
     const ks = OUTER_KEYSTONES[ci];
     if (ks) {
-      const k1 = small(`outer_${ci}_k`, stats, null, pos(th + 30, 420));
+      const k1 = small(`outer_${ci}_k`, stats, null, pos(th + 30 * A, 425));
       link(o, k1);
-      link(k1, add(`ks_${ks}`, { kind: 'keystone', keystone: ks, name: KEYSTONES[ks].name, icon: KEYSTONES[ks].icon, stats: {}, ...pos(th + 30, 478) }));
+      link(k1, add(`ks_${ks}`, { kind: 'keystone', keystone: ks, name: KEYSTONES[ks].name, icon: KEYSTONES[ks].icon, stats: {}, ...pos(th + 30 * A, 480) }));
     }
   });
   return { nodes, edges };

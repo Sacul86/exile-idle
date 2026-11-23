@@ -55,7 +55,7 @@ export const BASE_NAMES = {
              evasion: ['Shabby Jerkin', 'Leather Vest', 'Buckskin Tunic', 'Wild Leather', 'Sun Leather', 'Assassin Garb', 'Zodiac Leather', 'Phantom Shroud'] },
   gloves:  { armour: ['Iron Gauntlets', 'Plated Gauntlets', 'Bronze Gauntlets', 'Steel Gauntlets', 'Ancient Gauntlets', 'Titan Gauntlets', 'Spiked Gauntlets', 'Fists of Ruin'],
              evasion: ['Rawhide Gloves', 'Goathide Gloves', 'Deerskin Gloves', 'Eelskin Gloves', 'Sharkskin Gloves', 'Slink Gloves', 'Gripped Gloves', 'Wraith Grips'] },
-  boots:   { armour: ['Iron Greaves', 'Steel Greaves', 'Plated Greaves', 'Reinforced Greaves', 'Antique Greaves', 'Titan Greaves', 'Vaal Greaves', 'Stride of Kings'],
+  boots:   { armour: ['Iron Greaves', 'Steel Greaves', 'Plated Greaves', 'Reinforced Greaves', 'Antique Greaves', 'Titan Greaves', 'Runed Greaves', 'Stride of Kings'],
              evasion: ['Rawhide Boots', 'Goathide Boots', 'Deerskin Boots', 'Nubuck Boots', 'Eelskin Boots', 'Sharkskin Boots', 'Slink Boots', 'Windwalkers'] },
   belt:    ['Rustic Sash', 'Chain Belt', 'Leather Belt', 'Heavy Belt', 'Cloth Belt', 'Studded Belt', 'Vanguard Belt', 'Belt of Giants'],
   amulet:  ['Paua Amulet', 'Coral Amulet', 'Amber Amulet', 'Jade Amulet', 'Lapis Amulet', 'Onyx Amulet', 'Marble Amulet', 'Star Amulet'],
@@ -111,16 +111,16 @@ export const MYTHIC_BY_ID = Object.fromEntries(MYTHICS.map((m) => [m.id, m]));
 export const AFFIX_BY_ID = Object.fromEntries(AFFIXES.map((a) => [a.id, a]));
 
 export const ZONES = [
-  { name: 'The Twilight Strand', monsters: ['🧟', '🦀', '🐍'], boss: '🧟‍♂️', bossName: 'Hillock' },
-  { name: 'The Ledge',           monsters: ['🦇', '🐗', '🕷️'], boss: '🦂', bossName: 'Brutus' },
-  { name: 'Prisoner\'s Gate',    monsters: ['💀', '🐺', '🦎'], boss: '👹', bossName: 'Merveil' },
-  { name: 'The Crossroads',      monsters: ['🐊', '🦂', '🧌'], boss: '🐉', bossName: 'Vaal Oversoul' },
-  { name: 'Chamber of Sins',     monsters: ['👻', '🦑', '🐙'], boss: '😈', bossName: 'Piety' },
-  { name: 'The Ancient Pyramid', monsters: ['🧞', '🐫', '🦅'], boss: '🗿', bossName: 'Dominus' },
-  { name: 'The Cathedral',       monsters: ['🦴', '🕸️', '🧛'], boss: '🧙‍♂️', bossName: 'Malachai' },
-  { name: 'The Blood Aqueduct',  monsters: ['🩸', '🦈', '🐲'], boss: '🐍', bossName: 'Arakaali' },
-  { name: 'The Harbour Bridge',  monsters: ['🌊', '🐋', '🦞'], boss: '🦑', bossName: 'Doedre' },
-  { name: 'The Sceptre of God',  monsters: ['⚡', '🔥', '❄️'], boss: '🌟', bossName: 'Kitava' },
+  { name: 'Shipwreck Coast',      bg: 'coast',      icon: '🧟', monsters: ['zombie', 'crab', 'serpent'],     bossArt: 'gorrak',      bossName: 'Gorrak the Drowned' },
+  { name: 'Windswept Cliffs',     bg: 'cliffs',     icon: '🦅', monsters: ['harpy', 'ram', 'rockgolem'],     bossArt: 'brakka',      bossName: 'Brakka the Cliff Ogre' },
+  { name: 'Prison Depths',        bg: 'prison',     icon: '💀', monsters: ['skeleton', 'ghoul', 'rat'],      bossArt: 'jailer',      bossName: 'The Warden of Chains' },
+  { name: 'Overgrown Crossroads', bg: 'crossroads', icon: '🐺', monsters: ['direwolf', 'bandit', 'treant'],  bossArt: 'thornmother', bossName: 'The Thornmother' },
+  { name: 'Spore Caverns',        bg: 'caverns',    icon: '🍄', monsters: ['myconid', 'spider', 'troll'],    bossArt: 'mycelia',     bossName: 'Mycelia the Hive Queen' },
+  { name: 'Sunscorch Pyramid',    bg: 'pyramid',    icon: '🦂', monsters: ['mummy', 'scarab', 'scorpion'],   bossArt: 'ankhu',       bossName: 'Pharaoh Ankhu' },
+  { name: 'Moonlit Necropolis',   bg: 'necropolis', icon: '🦇', monsters: ['bat', 'skelmage', 'banshee'],    bossArt: 'lich',        bossName: 'Lich King Morvain' },
+  { name: 'Crimson Sewers',       bg: 'sewers',     icon: '🩸', monsters: ['leech', 'flesh', 'ratman'],      bossArt: 'fleshweaver', bossName: 'The Flesh Weaver' },
+  { name: 'Drowned Harbour',      bg: 'harbour',    icon: '🦑', monsters: ['fishman', 'crabknight', 'siren'], bossArt: 'kraken',     bossName: 'The Kraken Spawn' },
+  { name: 'Celestial Spire',      bg: 'spire',      icon: '👼', monsters: ['angel', 'sungolem', 'wisp'],     bossArt: 'seraph',      bossName: 'The Fallen Seraph' },
 ];
 export const STAGES_PER_ZONE = 10;
 export const MONSTERS_PER_STAGE = 10;

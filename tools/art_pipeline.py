@@ -52,19 +52,19 @@ for entry in spec:
         continue
 
     keyed = key_magenta(sheet)
-    mask = np.asarray(keyed)[..., 3] > 40
-    mask = ndimage.binary_dilation(mask, iterations=6)
-    labels, n = ndimage.label(mask)
-    objs = ndimage.find_objects(labels)
-    areas = ndimage.sum(mask, labels, range(1, n + 1))
+    alpha = np.asarray(keyed)[..., 3] > 60
     cells = {}
-    for k, sl in enumerate(objs):
-        if areas[k] < W * H * 0.002: continue          # ignore specks
-        ys, xs = sl
-        cyc, cxc = (ys.start + ys.stop) / 2, (xs.start + xs.stop) / 2
-        cell = int(cyc // ch) * cols + int(cxc // cw)
-        box = cells.get(cell)
-        cells[cell] = (min(box[0], xs.start), min(box[1], ys.start), max(box[2], xs.stop), max(box[3], ys.stop)) if box else (xs.start, ys.start, xs.stop, ys.stop)
+    for i in range(cols * rows):
+        cx, cy = i % cols, i // cols
+        x0, y0, x1, y1 = int(cx * cw), int(cy * ch), int((cx + 1) * cw), int((cy + 1) * ch)
+        sub = alpha[y0:y1, x0:x1]
+        labels, n = ndimage.label(ndimage.binary_dilation(sub, iterations=4))
+        if not n: continue
+        areas = ndimage.sum(sub, labels, range(1, n + 1))
+        keep = [k + 1 for k in range(n) if areas[k] > max(areas) * 0.03]
+        m = np.isin(labels, keep) & sub
+        ys, xs = np.where(m)
+        cells[i] = (x0 + xs.min(), y0 + ys.min(), x0 + xs.max() + 1, y0 + ys.max() + 1)
     for i, name in enumerate(names):
         if not name: continue
         box = cells.get(i)

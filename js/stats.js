@@ -1,17 +1,20 @@
 import { S, SLOTS, resistPenalty, physShare, isBossStage } from './data.js';
-import { treeBonuses } from './tree.js';
+import { treeBonuses, ROLES, CLASS_BY_ID } from './tree.js';
 import { classBonuses, isClassWeapon, WEAPON_MASTERY } from './classdata.js';
 import { itemStats } from './items.js';
 
 export const RESIST_CAP = 75;
 // Monsters outscale gear slightly, so tiers/crafting/passives matter.
-export let MONSTER_EXP = +(globalThis.process?.env?.MEXP || 1.45);
+export let MONSTER_EXP = +(globalThis.process?.env?.MEXP || 1.5);
+const PARTY_HP = +(globalThis.process?.env?.PHP || 2.8);
+const PARTY_DMG = +(globalThis.process?.env?.PDMG || 2.3);
 
 // Monster template for a stage (used for both combat and gear scoring)
 export function monsterFor(stage, elite = false, kind = null) {
   const boss = kind ? kind !== 'normal' : isBossStage(stage);
   const s = Math.pow(S(stage), MONSTER_EXP);
-  let hp = 60 * s, dmg = 4.5 * s, interval = 1.3;
+  // Party tuning: three heroes deal more damage, the tank and healer soak more
+  let hp = 60 * s * PARTY_HP, dmg = 4.5 * s * PARTY_DMG, interval = 1.3;
   // Ease the first few stages so the opening feels snappy
   const ease = Math.min(1, 0.4 + stage * 0.06);
   hp *= ease; dmg *= ease;
@@ -33,6 +36,9 @@ export function computeStats(state, gear = state.gear) {
   const tb = treeBonuses(state);
   for (const [k, v] of Object.entries(tb.stats)) add(k, v);
   for (const [k, v] of Object.entries(classBonuses(state, gear))) add(k, v);
+  const role = (CLASS_BY_ID[state.cls] || {}).role || 'dps';
+  for (const [k, v] of Object.entries(ROLES[role].bonus)) add(k, v);
+  if (state.petBonus) for (const [k, v] of Object.entries(state.petBonus)) add(k, v);
   const ks = tb.keystones;
   const g = (k) => t[k] || 0;
   const hasWeapon = !!gear.weapon;
@@ -41,6 +47,7 @@ export function computeStats(state, gear = state.gear) {
   if (ks.has('resolute')) more *= 1.45;
   if (ks.has('glass')) more *= 1.6;
   if (ks.has('overload')) eleMore *= 1.3;
+  if (ks.has('lifebloom')) more *= 0.7;
   more *= 1 + g('moreDmg') / 100;
   const mastery = isClassWeapon(state, gear.weapon);
   if (mastery) more *= 1 + WEAPON_MASTERY;
@@ -56,7 +63,10 @@ export function computeStats(state, gear = state.gear) {
   if (ks.has('acrobatics')) { evaMore = 1.3; armMore = 0.5; }
   const st = {
     keystones: ks,
+    role,
     mastery,
+    healMult: (1 + g('incHeal') / 100) * (1 + g('healMore') / 100) * (ks.has('lifebloom') ? 1.6 : 1),
+    dr: Math.min(0.6, g('dr') / 100),
     cdr: Math.min(60, g('cdr')),
     skillPow: g('skillPow'),
     physMin: physMinRaw * (1 - convert) * physMult,
@@ -95,7 +105,7 @@ export function computeStats(state, gear = state.gear) {
   const resRed = st.resist / 100;
   const taken = (1 - st.evadeChance) * (1 - st.block / 100) *
     (mon.physShare * (1 - st.armourRed) + (1 - mon.physShare) * (1 - resRed));
-  st.damageTakenMult = Math.max(0.02, taken);
+  st.damageTakenMult = Math.max(0.02, taken * (1 - st.dr));
   st.ehp = st.maxLife / st.damageTakenMult;
   const sustain = st.regen + (st.lifeOnHit + st.maxLife * st.lifeOnHitPct / 100) * st.aps + st.dps * st.leech / 100;
   st.sustain = sustain;
@@ -103,7 +113,13 @@ export function computeStats(state, gear = state.gear) {
   const ehpS = st.ehp + (sustain * 8) / st.damageTakenMult;
   const util = 1 + st.goldFind * 0.0005 + st.rarity * 0.001 + st.xpGain * 0.001;
   const skillF = (1 + st.skillPow / 100 * 0.35) * (1 + st.cdr / 100 * 0.3);
-  st.power = Math.sqrt(st.dps * skillF * ehpS) * util;
+  // Healing throughput: healers convert their hits into heals
+  st.hps = st.avgHit * st.aps * 0.8 * st.healMult;
+  // Role-weighted power: tanks value defence, DPS value damage, healers value healing
+  const off = st.dps * skillF;
+  if (role === 'tank') st.power = Math.pow(off, 0.3) * Math.pow(ehpS, 0.7) * util;
+  else if (role === 'healer') st.power = Math.pow(st.hps * skillF, 0.6) * Math.pow(ehpS, 0.4) * util;
+  else st.power = Math.pow(off, 0.7) * Math.pow(ehpS, 0.3) * util;
   return st;
 }
 

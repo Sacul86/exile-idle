@@ -6,7 +6,7 @@ export const SKILLS = [
   { id: 'cleave',   name: 'Cleave',         icon: '🌀', unlock: 1,  cd: 4,  kind: 'hit',    power: 2.5, desc: 'Deal {p}% of your hit damage.' },
   { id: 'fireball', name: 'Fireball',       icon: '☄️', unlock: 5,  cd: 5,  kind: 'hit',    power: 3.2, ele: true, desc: 'Deal {p}% of your hit damage. Double effect from Elemental damage.' },
   { id: 'warcry',   name: 'War Cry',        icon: '📯', unlock: 10, cd: 15, kind: 'buff',   stat: 'dmg', power: 0.35, dur: 6, desc: '+{p}% more Damage for {d}s.' },
-  { id: 'bloodrite',name: 'Blood Rite',     icon: '💉', unlock: 15, cd: 12, kind: 'heal',   power: 0.3, desc: 'Heal {p}% of max Life when below 60% Life.' },
+  { id: 'bloodrite',name: 'Blood Rite',     icon: '💉', unlock: 15, cd: 12, kind: 'heal',   power: 0.3, desc: 'Heal the most injured ally for {p}% of their max Life when below 60% Life.' },
   { id: 'molten',   name: 'Molten Shell',   icon: '🔶', unlock: 20, cd: 18, kind: 'shield', power: 0.35, dur: 8, desc: 'Absorb damage equal to {p}% of max Life for {d}s.' },
   { id: 'flurry',   name: 'Blade Flurry',   icon: '🗡️', unlock: 25, cd: 8,  kind: 'hit',    power: 0.75, hits: 6, desc: '6 rapid hits of {p}% hit damage.' },
   { id: 'frostnova',name: 'Frost Nova',     icon: '❄️', unlock: 30, cd: 14, kind: 'freeze', power: 1.5, dur: 2.5, desc: 'Deal {p}% hit damage and Freeze the enemy for {d}s.' },
@@ -16,16 +16,19 @@ export const SKILLS = [
   // ---- Class skills ----
   { id: 'arc',       cls: 'witch',    name: 'Arc',             icon: '🌩️', unlock: 12, cd: 5,  kind: 'hit', power: 1.3, hits: 3, ele: true, fx: 'arc', desc: 'Lightning chains for 3 hits of {p}% hit damage. Double effect from Elemental damage.' },
   { id: 'storm',     cls: 'witch',    name: 'Elemental Storm', icon: '🌪️', unlock: 35, cd: 14, kind: 'hit', power: 0.9, hits: 8, ele: true, fx: 'storm', desc: 'A storm strikes 8 times for {p}% hit damage. Double effect from Elemental damage.' },
-  { id: 'shadowstrike', cls: 'shadow', name: 'Shadow Strike',  icon: '🗡️', unlock: 12, cd: 6,  kind: 'hit', power: 3.5, alwaysCrit: 1, fx: 'shadow', desc: 'Teleport behind the enemy for {p}% hit damage. Always a Critical Strike.' },
+  { id: 'shadowstrike', cls: 'shadow', name: 'Shadow Strike',  icon: '🗡️', unlock: 12, cd: 6,  kind: 'hit', power: 5, alwaysCrit: 1, fx: 'shadow', desc: 'Teleport behind the enemy for {p}% hit damage. Always a Critical Strike.' },
   { id: 'smoke',     cls: 'shadow',   name: 'Smoke Bomb',      icon: '💨', unlock: 35, cd: 16, kind: 'buff', buffs: { evade: 0.25, dmg: 0.2 }, power: 1, dur: 5, desc: '+{e}% chance to Evade and +{m}% more Damage for {d}s.' },
-  { id: 'rain',      cls: 'ranger',   name: 'Rain of Arrows',  icon: '🏹', unlock: 12, cd: 7,  kind: 'hit', power: 0.8, hits: 7, fx: 'rain', desc: 'Arrows rain down: 7 hits of {p}% hit damage.' },
-  { id: 'mark',      cls: 'ranger',   name: "Hunter's Mark",   icon: '🎯', unlock: 35, cd: 12, kind: 'hit', power: 1.5, baseExpose: 0.3, exposeDur: 6, fx: 'mark', desc: 'Deal {p}% hit damage and mark the enemy: it takes 30% more damage from you for 6s.' },
+  { id: 'rain',      cls: 'ranger',   name: 'Rain of Arrows',  icon: '🏹', unlock: 12, cd: 7,  kind: 'hit', power: 1.2, hits: 7, fx: 'rain', desc: 'Arrows rain down: 7 hits of {p}% hit damage.' },
+  { id: 'mark',      cls: 'ranger',   name: "Hunter's Mark",   icon: '🎯', unlock: 35, cd: 12, kind: 'hit', power: 2.5, baseExpose: 0.3, exposeDur: 6, fx: 'mark', desc: 'Deal {p}% hit damage and mark the enemy: it takes 30% more damage from you for 6s.' },
   { id: 'riposte',   cls: 'duelist',  name: 'Riposte',         icon: '⚔️', unlock: 12, cd: 6,  kind: 'hit', power: 3, baseHeal: 0.06, fx: 'riposte', desc: 'Counter for {p}% hit damage and heal 6% of max Life.' },
   { id: 'bloodrush', cls: 'duelist',  name: 'Blood Rush',      icon: '🩸', unlock: 35, cd: 18, kind: 'buff', buffs: { leech: 4, aps: 0.25 }, power: 1, dur: 6, desc: '+{l}% Life Leech and +{a}% Attack Speed for {d}s.' },
+  { id: 'unbreakable', cls: 'marauder', name: 'Unbreakable',   icon: '🪨', unlock: 35, cd: 18, kind: 'buff', buffs: { dr: 0.4 }, power: 1, dur: 6, desc: 'Take {r}% less damage for {d}s.' },
   { id: 'quake',     cls: 'marauder', name: 'Earthquake',      icon: '🌋', unlock: 12, cd: 12, kind: 'freeze', power: 4, dur: 1.5, stun: true, fx: 'quake', desc: 'Slam the ground for {p}% hit damage and Stun for {d}s.' },
-  { id: 'berserk',   cls: 'marauder', name: 'Berserk',         icon: '😡', unlock: 35, cd: 20, kind: 'buff', buffs: { dmg: 0.5, aps: 0.25 }, power: 1, dur: 6, desc: '+{m}% more Damage and +{a}% Attack Speed for {d}s.' },
-  { id: 'smite',     cls: 'templar',  name: 'Holy Smite',      icon: '✨', unlock: 12, cd: 6,  kind: 'hit', power: 2.8, ele: true, baseHeal: 0.08, fx: 'smite', desc: 'Call down holy light for {p}% hit damage and heal 8% of max Life. Double effect from Elemental damage.' },
-  { id: 'divshield', cls: 'templar',  name: 'Divine Shield',   icon: '🛡️', unlock: 35, cd: 20, kind: 'shield', power: 0.6, dur: 6, desc: 'Absorb damage equal to {p}% of max Life for {d}s.' },
+  { id: 'berserk',   name: 'Berserk',         icon: '😡', unlock: 45, cd: 20, kind: 'buff', buffs: { dmg: 0.5, aps: 0.25 }, power: 1, dur: 6, desc: '+{m}% more Damage and +{a}% Attack Speed for {d}s.' },
+  { id: 'holylight', cls: 'templar',  name: 'Holy Light',      icon: '✨', unlock: 12, cd: 9,  kind: 'heal', party: true, power: 0.25, desc: 'Heal the whole party for {p}% of their max Life.' },
+  { id: 'divshield', cls: 'templar',  name: 'Divine Shield',   icon: '🛡️', unlock: 35, cd: 20, kind: 'shield', party: true, power: 0.4, dur: 6, desc: 'Shield the whole party for {p}% of their max Life for {d}s.' },
+  { id: 'rejuv',     cls: 'druid',    name: 'Rejuvenation',    icon: '🌱', unlock: 12, cd: 8,  kind: 'heal', party: true, power: 0.15, regen: 0.04, dur: 6, desc: 'Heal the party for {p}% of max Life, then 4% per second for {d}s.' },
+  { id: 'entangle',  cls: 'druid',    name: 'Entangle',        icon: '🌿', unlock: 35, cd: 12, kind: 'freeze', power: 1.5, dur: 2.5, stun: true, fx: 'quake', desc: 'Roots burst from the ground for {p}% hit damage and hold the enemy for {d}s.' },
 ];
 export const SKILL_BY_ID = Object.fromEntries(SKILLS.map((s) => [s.id, s]));
 export const MAX_SKILL_RANK = 20;
@@ -126,6 +129,6 @@ export function skillDescFull(sk, rank, picks) {
   const b = sk.buffs || {};
   const pct = (v) => Math.round(v * ef.power * 100);
   return sk.desc.replace('{p}', p).replace('{d}', +ef.duration.toFixed(1))
-    .replace('{e}', pct(b.evade || 0)).replace('{m}', pct(b.dmg || 0)).replace('{a}', pct(b.aps || 0)).replace('{l}', +((b.leech || 0) * ef.power).toFixed(1))
+    .replace('{e}', pct(b.evade || 0)).replace('{m}', pct(b.dmg || 0)).replace('{a}', pct(b.aps || 0)).replace('{l}', +((b.leech || 0) * ef.power).toFixed(1)).replace('{r}', pct(b.dr || 0))
     + ` Cooldown ${ef.cooldown.toFixed(1)}s.`;
 }

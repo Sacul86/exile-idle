@@ -4,10 +4,11 @@
 export const CLASS_WEAPONS = {
   witch: ['Wand', 'Staff'],
   shadow: ['Dagger', 'Claw'],
-  ranger: ['Bow'],
+  ranger: ['Bow', 'Claw'],
   duelist: ['Sword'],
   marauder: ['Axe', 'Mace'],
   templar: ['Sceptre', 'Mace'],
+  druid: ['Staff', 'Sceptre'],
 };
 export const WEAPON_MASTERY = 0.3;
 
@@ -25,14 +26,17 @@ export const SETS = {
     bonuses: { 2: { aps: 12 }, 3: { incEvasion: 40 }, 5: { moreDmg: 25, evadeCap: 5 } },
     text: { 2: '+12% increased Attack Speed', 3: '+40% increased Evasion', 5: '25% more Damage, +5% maximum Evade chance' } },
   duelist:  { name: "Gladiator's Panoply",     prefix: 'Gladiator', cls: 'duelist',
-    bonuses: { 2: { incPhys: 25 }, 3: { leech: 1.5, block: 6 }, 5: { moreDmg: 30, incLife: 10 } },
-    text: { 2: '+25% increased Physical Damage', 3: '1.5% Life Leech, +6% Block', 5: '30% more Damage, +10% increased Life' } },
+    bonuses: { 2: { block: 6 }, 3: { incArmour: 30, leech: 1 }, 5: { dr: 15, moreDmg: 15 } },
+    text: { 2: '+6% Chance to Block', 3: '+30% Armour, 1% Life Leech', 5: 'Take 15% less damage, 15% more Damage' } },
   marauder: { name: "Warlord's Plate",         prefix: 'Warlord', cls: 'marauder',
-    bonuses: { 2: { incLife: 20 }, 3: { incArmour: 40 }, 5: { moreDmg: 25, regenPct: 1 } },
-    text: { 2: '+20% increased Life', 3: '+40% increased Armour', 5: '25% more Damage, Regenerate 1% Life per second' } },
+    bonuses: { 2: { incLife: 20 }, 3: { incArmour: 40 }, 5: { dr: 15, regenPct: 1 } },
+    text: { 2: '+20% increased Life', 3: '+40% increased Armour', 5: 'Take 15% less damage, Regenerate 1% Life per second' } },
   templar:  { name: "Crusader's Vestments",    prefix: 'Crusader', cls: 'templar',
-    bonuses: { 2: { resist: 8 }, 3: { incEle: 30, incArmour: 30 }, 5: { moreDmg: 25, maxRes: 5 } },
-    text: { 2: '+8% Elemental Resistance', 3: '+30% Elemental Damage, +30% Armour', 5: '25% more Damage, +5% maximum Resistance' } },
+    bonuses: { 2: { incHeal: 20, resist: 5 }, 3: { incArmour: 30, incLife: 10 }, 5: { healMore: 30, maxRes: 5 } },
+    text: { 2: '+20% Healing, +5% Resistance', 3: '+30% Armour, +10% Life', 5: '30% more Healing, +5% maximum Resistance' } },
+  druid:    { name: "Grove Warden's Mantle",   prefix: 'Grovewarden', cls: 'druid',
+    bonuses: { 2: { incHeal: 25 }, 3: { incLife: 15, regenPct: 0.5 }, 5: { healMore: 30, cdr: 15 } },
+    text: { 2: '+25% increased Healing', 3: '+15% Life, Regenerate 0.5% Life/s', 5: '30% more Healing, skills recharge 15% faster' } },
 };
 export const setPieceName = (setId, type) => `${SETS[setId].prefix} ${PIECE_WORDS[type]}`;
 
@@ -45,54 +49,42 @@ export function setCounts(gear) {
 
 // ---- Ascendancy: at levels 15 / 40 / 75 choose 1 of 2 ----
 export const ASC_LEVELS = [15, 40, 75];
+const P = (name, desc, e) => ({ name, desc, e });
 export const ASCENDANCY = {
   witch: [
-    [{ name: 'Elementalist', desc: '+35% increased Elemental Damage', e: { incEle: 35 } },
-     { name: 'Occultist', desc: 'Skills deal 25% more damage / effect', e: { skillPow: 25 } }],
-    [{ name: 'Arcane Barrier', desc: '+20% Life, +10% Elemental Resistance', e: { incLife: 20, resist: 10 } },
-     { name: 'Mana Surge', desc: 'Skills recharge 20% faster', e: { cdr: 20 } }],
-    [{ name: 'Archmage', desc: '25% more Damage', e: { moreDmg: 25 } },
-     { name: 'Eternal Ward', desc: '+5% max Resistance, Regenerate 1% Life/s', e: { maxRes: 5, regenPct: 1 } }],
+    [P('Pyromancer', '+35% increased Elemental Damage', { incEle: 35 }), P('Arcanist', 'Skills deal 25% more damage / effect', { skillPow: 25 })],
+    [P('Spellward', '+20% Life, +10% Elemental Resistance', { incLife: 20, resist: 10 }), P('Chronomancer', 'Skills recharge 20% faster', { cdr: 20 })],
+    [P('Archmage', '25% more Damage', { moreDmg: 25 }), P('Eternal', '+5% max Resistance, Regenerate 1% Life/s', { maxRes: 5, regenPct: 1 })],
   ],
   shadow: [
-    [{ name: 'Assassin', desc: '+50% to Critical Strike Multiplier', e: { critMulti: 50 } },
-     { name: 'Trickster', desc: '+30% Evasion, +6% Attack Speed', e: { incEvasion: 30, aps: 6 } }],
-    [{ name: 'Saboteur', desc: 'Skills recharge 20% faster', e: { cdr: 20 } },
-     { name: 'Venomist', desc: '1.5% Life Leech, +20% Crit Chance', e: { leech: 1.5, critChance: 20 } }],
-    [{ name: 'Executioner', desc: '25% more Damage', e: { moreDmg: 25 } },
-     { name: 'Phantom', desc: '+8% maximum Evade chance', e: { evadeCap: 8 } }],
+    [P('Cutthroat', '+50% to Critical Strike Multiplier', { critMulti: 50 }), P('Nightstalker', '+30% Evasion, +6% Attack Speed', { incEvasion: 30, aps: 6 })],
+    [P('Trapper', 'Skills recharge 20% faster', { cdr: 20 }), P('Venomist', '1.5% Life Leech, +20% Crit Chance', { leech: 1.5, critChance: 20 })],
+    [P('Executioner', '25% more Damage', { moreDmg: 25 }), P('Phantom', '+8% maximum Evade chance', { evadeCap: 8 })],
   ],
   ranger: [
-    [{ name: 'Deadeye', desc: '+12% increased Attack Speed', e: { aps: 12 } },
-     { name: 'Pathfinder', desc: 'Regenerate 1% Life/s, +10% Life', e: { regenPct: 1, incLife: 10 } }],
-    [{ name: 'Raider', desc: '+40% increased Evasion', e: { incEvasion: 40 } },
-     { name: 'Sharpshooter', desc: '+40% Crit Chance, +20% Crit Multiplier', e: { critChance: 40, critMulti: 20 } }],
-    [{ name: 'Windstorm', desc: '25% more Damage', e: { moreDmg: 25 } },
-     { name: 'Ghost', desc: '+8% maximum Evade chance', e: { evadeCap: 8 } }],
+    [P('Sharpeye', '+12% increased Attack Speed', { aps: 12 }), P('Wayfinder', 'Regenerate 1% Life/s, +10% Life', { regenPct: 1, incLife: 10 })],
+    [P('Skirmisher', '+40% increased Evasion', { incEvasion: 40 }), P('Sniper', '+40% Crit Chance, +20% Crit Multiplier', { critChance: 40, critMulti: 20 })],
+    [P('Windstorm', '25% more Damage', { moreDmg: 25 }), P('Ghost', '+8% maximum Evade chance', { evadeCap: 8 })],
+  ],
+  druid: [
+    [P('Bloomcaller', '+30% increased Healing', { incHeal: 30 }), P('Stormwarden', '+30% Elemental Damage, +10% Attack Speed', { incEle: 30, aps: 10 })],
+    [P('Grove Ward', '+20% Life, +20% Armour', { incLife: 20, incArmour: 20 }), P('Seasons', 'Skills recharge 20% faster', { cdr: 20 })],
+    [P('Avatar of Life', '30% more Healing', { healMore: 30 }), P('Wildheart', '25% more Damage', { moreDmg: 25 })],
   ],
   duelist: [
-    [{ name: 'Slayer', desc: '2% Life Leech, +15% Physical Damage', e: { leech: 2, incPhys: 15 } },
-     { name: 'Champion', desc: '+20% Armour, +15% Life', e: { incArmour: 20, incLife: 15 } }],
-    [{ name: 'Gladiator', desc: '+15% Chance to Block', e: { block: 15 } },
-     { name: 'Duellist', desc: '+10% Attack Speed, +20% Physical Damage', e: { aps: 10, incPhys: 20 } }],
-    [{ name: 'Warlord', desc: '25% more Damage', e: { moreDmg: 25 } },
-     { name: 'Unyielding', desc: '+25% Life, Regenerate 2% Life/s', e: { incLife: 25, regenPct: 2 } }],
+    [P('Shieldmaster', '+10% Chance to Block', { block: 10 }), P('Bladeleech', '2% Life Leech, +15% Physical Damage', { leech: 2, incPhys: 15 })],
+    [P('Arena Veteran', 'Take 10% less damage', { dr: 10 }), P('Swordsman', '+10% Attack Speed, +20% Physical Damage', { aps: 10, incPhys: 20 })],
+    [P('Champion', '+25% Life, Regenerate 2% Life/s', { incLife: 25, regenPct: 2 }), P('Warlord', '25% more Damage', { moreDmg: 25 })],
   ],
   marauder: [
-    [{ name: 'Juggernaut', desc: '+40% increased Armour', e: { incArmour: 40 } },
-     { name: 'Berserker', desc: '+25% Physical Damage, +5% Attack Speed', e: { incPhys: 25, aps: 5 } }],
-    [{ name: 'Chieftain', desc: '+25% Elemental Damage, +10% Resistance', e: { incEle: 25, resist: 10 } },
-     { name: 'Bloodlust', desc: '1% Life Leech, +15% Life', e: { leech: 1, incLife: 15 } }],
-    [{ name: 'Titan', desc: '25% more Damage', e: { moreDmg: 25 } },
-     { name: 'Unstoppable', desc: '+30% Life, +5% max Resistance', e: { incLife: 30, maxRes: 5 } }],
+    [P('Ironclad', '+40% increased Armour', { incArmour: 40 }), P('Battle Rage', '+25% Physical Damage, +5% Attack Speed', { incPhys: 25, aps: 5 })],
+    [P('Chieftain', '+25% Elemental Damage, +10% Resistance', { incEle: 25, resist: 10 }), P('Bloodlust', '1% Life Leech, +15% Life', { leech: 1, incLife: 15 })],
+    [P('Colossus', 'Take 12% less damage, +20% Life', { dr: 12, incLife: 20 }), P('Titan', '25% more Damage', { moreDmg: 25 })],
   ],
   templar: [
-    [{ name: 'Inquisitor', desc: '+30% Elemental Damage, +20% Crit Chance', e: { incEle: 30, critChance: 20 } },
-     { name: 'Guardian', desc: '+20% Life, +20% Armour', e: { incLife: 20, incArmour: 20 } }],
-    [{ name: 'Hierophant', desc: 'Skills recharge 20% faster', e: { cdr: 20 } },
-     { name: 'Paladin', desc: '+10% Block, +8% Resistance', e: { block: 10, resist: 8 } }],
-    [{ name: 'Divine Avatar', desc: '25% more Damage', e: { moreDmg: 25 } },
-     { name: 'Sanctified', desc: '+5% max Resistance, Regenerate 1.5% Life/s', e: { maxRes: 5, regenPct: 1.5 } }],
+    [P('Lightbringer', '+30% increased Healing', { incHeal: 30 }), P('Inquisitor', '+30% Elemental Damage, +20% Crit Chance', { incEle: 30, critChance: 20 })],
+    [P('Sanctuary', 'Skills recharge 20% faster', { cdr: 20 }), P('Paladin', '+10% Block, +8% Resistance', { block: 10, resist: 8 })],
+    [P('Saint', '30% more Healing', { healMore: 30 }), P('Sanctified', '+5% max Resistance, Regenerate 1.5% Life/s', { maxRes: 5, regenPct: 1.5 })],
   ],
 };
 export const ascRespecCost = (level) => Math.ceil(200 * Math.pow(1.04, level) * (1 + level * 0.1));
