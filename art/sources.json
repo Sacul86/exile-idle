@@ -46,110 +46,215 @@
   "id": "img4",
   "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/e8d9d188-d698-446e-975e-df93dbccd566.png",
   "grid": [
-   1,
-   1
+   3,
+   3
   ],
-  "dir": "tmp",
-  "names": []
+  "dir": "monsters",
+  "names": [
+   "zombie",
+   "crab",
+   "serpent",
+   "harpy",
+   "ram",
+   "rockgolem",
+   "skeleton",
+   "ghoul",
+   "rat"
+  ],
+  "size": 256
  },
  {
   "id": "img5",
   "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/a525dc7a-d345-4881-bd27-e6d1d0cdd573.png",
   "grid": [
-   1,
-   1
+   3,
+   3
   ],
-  "dir": "tmp",
-  "names": []
+  "dir": "monsters",
+  "names": [
+   "direwolf",
+   "bandit",
+   "treant",
+   "myconid",
+   "spider",
+   "troll",
+   "mummy",
+   "scarab",
+   "scorpion"
+  ],
+  "size": 256
  },
  {
   "id": "img6",
   "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/4cd0ac20-a48d-4e32-a582-546a69dfc847.png",
   "grid": [
-   1,
-   1
+   3,
+   3
   ],
-  "dir": "tmp",
-  "names": []
+  "dir": "monsters",
+  "names": [
+   "bat",
+   "skelmage",
+   "banshee",
+   "leech",
+   "flesh",
+   "ratman",
+   "fishman",
+   "crabknight",
+   "siren"
+  ],
+  "size": 256
  },
  {
   "id": "img7",
   "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/38d66d61-275e-4347-b889-3980d82f45a1.png",
   "grid": [
-   1,
-   1
+   3,
+   3
   ],
-  "dir": "tmp",
-  "names": []
+  "dir": "monsters",
+  "names": [
+   "angel",
+   "sungolem",
+   "wisp",
+   "dknight",
+   "imp",
+   "wraith",
+   "hound",
+   "cultist",
+   "demonlord"
+  ],
+  "size": 320,
+  "key": "black"
  },
  {
   "id": "img8",
   "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/ca838815-7508-4421-8976-779b2dd88fcf.png",
   "grid": [
-   1,
-   1
+   3,
+   3
   ],
-  "dir": "tmp",
-  "names": []
+  "dir": "pets",
+  "names": [
+   "drake",
+   "phoenix",
+   "wolf",
+   "golem",
+   "fox",
+   "owl",
+   "slime",
+   "cat",
+   "griffin"
+  ],
+  "size": 200,
+  "key": "black"
  },
  {
   "id": "img9",
   "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/ce83b07e-5cc1-43ad-9227-ce51419c93f8.png",
   "grid": [
-   1,
-   1
+   3,
+   2
   ],
-  "dir": "tmp",
-  "names": []
+  "dir": "bosses",
+  "names": [
+   "gorrak",
+   "brakka",
+   "jailer",
+   "thornmother",
+   "mycelia",
+   "ankhu"
+  ],
+  "size": 400
  },
  {
   "id": "img10",
   "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/a04b4229-bf66-49b1-83fa-3f5e6d28b47a.png",
   "grid": [
-   1,
-   1
+   3,
+   2
   ],
-  "dir": "tmp",
-  "names": []
+  "dir": "bosses",
+  "names": [
+   "lich",
+   "fleshweaver",
+   "kraken",
+   "seraph",
+   "warden",
+   "dragon"
+  ],
+  "size": 400
  },
  {
   "id": "img11",
   "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/7a1ef40d-ec95-4689-9169-2463668761c4.png",
   "grid": [
-   1,
-   1
+   2,
+   2
   ],
-  "dir": "tmp",
-  "names": []
+  "dir": "bg",
+  "names": [
+   "coast",
+   "cliffs",
+   "prison",
+   "crossroads"
+  ],
+  "size": 768,
+  "key": false,
+  "inset": 10
  },
  {
   "id": "img12",
   "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/0de4251e-d9af-4ccf-b1f4-a5bb0ab45553.png",
   "grid": [
-   1,
-   1
+   2,
+   2
   ],
-  "dir": "tmp",
-  "names": []
+  "dir": "bg",
+  "names": [
+   "caverns",
+   "pyramid",
+   "necropolis",
+   "sewers"
+  ],
+  "size": 768,
+  "key": false,
+  "inset": 10
  },
  {
   "id": "img13",
   "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/41e84a56-0d8d-4d65-875c-2c94dbeef053.png",
   "grid": [
-   1,
-   1
+   2,
+   2
   ],
-  "dir": "tmp",
-  "names": []
+  "dir": "bg",
+  "names": [
+   "harbour",
+   "spire",
+   "dungeon",
+   "raid"
+  ],
+  "size": 768,
+  "key": false,
+  "inset": 10
  },
  {
   "id": "img14",
   "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/f96643be-20d8-4d70-b77d-4cd9d9b39a64.png",
   "grid": [
-   1,
-   1
+   2,
+   2
   ],
-  "dir": "tmp",
-  "names": []
+  "dir": "bg",
+  "names": [
+   "lair",
+   "hellfire",
+   "town",
+   "stones"
+  ],
+  "size": 768,
+  "key": false,
+  "inset": 10
  }
 ]

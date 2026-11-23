@@ -12,6 +12,29 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = json.load(open(os.path.join(ROOT, 'art', 'sources.json')))
 os.makedirs(os.path.join(ROOT, 'art', 'raw'), exist_ok=True)
 
+def key_black(img, cols, rows):
+    """Remove near-black background connected to each cell's border (flood fill)."""
+    a = np.asarray(img.convert('RGBA')).astype(np.float32)
+    H, W = a.shape[:2]
+    mx = a[..., :3].max(-1)
+    dark = mx < 30
+    labels, n = ndimage.label(dark)
+    border = np.zeros_like(dark)
+    cw, ch = W / cols, H / rows
+    for c in range(cols + 1):
+        x = min(W - 1, int(c * cw)); border[:, max(0, x - 2):x + 2] = True
+    for r in range(rows + 1):
+        y = min(H - 1, int(r * ch)); border[max(0, y - 2):y + 2, :] = True
+    bg_labels = np.unique(labels[border & dark])
+    bg = np.isin(labels, bg_labels[bg_labels > 0])
+    # soft edge: fade dim pixels next to the background
+    near = ndimage.binary_dilation(bg, iterations=2) & ~bg
+    alpha = np.ones(dark.shape, np.float32)
+    alpha[bg] = 0
+    alpha[near] = np.clip((mx[near] - 30) / 50, 0.25, 1)
+    out = np.dstack([a[..., :3], a[..., 3] * alpha]).clip(0, 255).astype(np.uint8)
+    return Image.fromarray(out, 'RGBA')
+
 def key_magenta(img):
     a = np.asarray(img.convert('RGBA')).astype(np.float32)
     r, g, b, al = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
@@ -51,7 +74,7 @@ for entry in spec:
             print('wrote', entry['dir'], name, tile.size)
         continue
 
-    keyed = key_magenta(sheet)
+    keyed = key_black(sheet, cols, rows) if entry.get('key') == 'black' else key_magenta(sheet)
     alpha = np.asarray(keyed)[..., 3] > 60
     cells = {}
     for i in range(cols * rows):
