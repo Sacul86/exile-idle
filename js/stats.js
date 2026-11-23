@@ -1,153 +1,154 @@
-import { S, SLOTS, resistPenalty, physShare, isBossStage } from './data.js';
-import { treeBonuses, ROLES, CLASS_BY_ID } from './tree.js';
-import { classBonuses, isClassWeapon, WEAPON_MASTERY } from './classdata.js';
+// Hero stat computation (pure). Everything that modifies the hero funnels through here.
+import { S, CLASSES, ATTR_KEYS, ATTR_PER_LEVEL, SLOTS, TALENT_STATS, TALENT_VAL, specOf, COMPANIONS, evoOf, RUNES, INSCR_TAGS, ASC_PERKS, unlocked, LEVEL_CAP } from './data.js';
 import { itemStats } from './items.js';
+import { SKILLS } from './skills.js';
 
-export const RESIST_CAP = 75;
-// Monsters outscale gear slightly, so tiers/crafting/passives matter.
-export let MONSTER_EXP = +(globalThis.process?.env?.MEXP || 1.5);
-const PARTY_HP = +(globalThis.process?.env?.PHP || 5);
-const PARTY_DMG = +(globalThis.process?.env?.PDMG || 2.7);
+export const ELEMS = ['fire', 'cold', 'lightning', 'arcane', 'shadow', 'holy', 'poison'];
+export const armourK = (mlvl) => 25 * Math.pow(S(mlvl), 1.6);
+export const armourReduction = (armour, mlvl) => Math.min(0.8, armour / (armour + armourK(mlvl)));
+export const xpToNext = (lvl) => Math.round(60 * Math.pow(lvl, 1.45) * Math.pow(1.045, lvl));
+export const masteryXp = (m) => xpToNext(LEVEL_CAP) * (1 + m * 0.05);
 
-// Monster template for a stage (used for both combat and gear scoring)
-export function monsterFor(stage, elite = false, kind = null) {
-  const boss = kind ? kind !== 'normal' : isBossStage(stage);
-  const s = Math.pow(S(stage), MONSTER_EXP);
-  // Party tuning: three heroes deal more damage, the tank and healer soak more
-  let hp = 60 * s * PARTY_HP, dmg = 4.5 * s * PARTY_DMG, interval = 1.3;
-  // Ease the first few stages so the opening feels snappy
-  const ease = Math.min(1, 0.4 + stage * 0.06);
-  hp *= ease; dmg *= ease;
-  if (boss) { hp *= 9; dmg *= 1.7; interval = 1.5; }
-  else if (elite) { hp *= 2.5; dmg *= 1.3; }
-  return { hp, maxHp: hp, dmg, interval, boss, elite, acc: 40 * S(stage), physShare: physShare(stage) };
+export function talentPointsTotal(state) {
+  const fromLevel = Math.max(0, state.level - 24);
+  return fromLevel + Math.floor((state.mastery || 0) / 5) + (state.ascPerks?.mastery || 0);
+}
+export const talentPointsSpent = (state) => Object.values(state.talents || {}).reduce((s, arr) => s + arr.reduce((a, b) => a + b, 0), 0);
+export const talentMax = (state, tree) => (specOf(state)?.tree === tree ? 5 : 3);
+export const talentRowOpen = (state, tree, idx) => (state.talents[tree] || []).reduce((a, b) => a + b, 0) >= Math.floor(idx / 2) * 3;
+
+export const attrPointsTotal = (state) => (state.level - 1) * ATTR_PER_LEVEL;
+export const attrPointsSpent = (state) => ATTR_KEYS.reduce((s, k) => s + (state.attrs[k] || 0), 0);
+
+export function companionBonus(state, extra = 0) {
+  const out = {};
+  const c = state.companions;
+  if (!c) return out;
+  const spec = specOf(state);
+  const full = spec?.id === 'beastmaster' && state.level >= 40;
+  const ids = [c.active, ...(c.passive || [])].filter(Boolean);
+  ids.forEach((id, i) => {
+    const d = COMPANIONS[id], lvl = c.levels[id] || 1;
+    const k = (d.base + d.per * (lvl - 1)) * evoOf(lvl).mult * (i === 0 || full ? 1 : 0.5) * (1 + extra / 100);
+    out[d.stat] = (out[d.stat] || 0) + k;
+    if (d.stat2) out[d.stat2] = (out[d.stat2] || 0) + k * (d.stat2 === 'critDmg' ? 4 : 1);
+  });
+  return out;
 }
 
-export const combatLevel = (state) => (state.run ? state.run.level : state.stage);
+export function inscriptionSets(state) {
+  const counts = {};
+  for (const ins of state.inscribed || []) if (ins) counts[ins.tag] = (counts[ins.tag] || 0) + 1;
+  return counts;
+}
 
-export function computeStats(state, gear = state.gear) {
-  const t = {};
-  const add = (k, v) => { t[k] = (t[k] || 0) + v; };
+// gearMap: slot -> item (defaults to state.gear)
+export function computeStats(state, gearMap = state.gear, run = state.run) {
+  const cls = CLASSES[state.cls];
+  const add = {};
+  const flags = new Set();
+  const A = (k, v) => { if (v) add[k] = (add[k] || 0) + v; };
+  // gear
+  let uniques = [];
   for (const slot of SLOTS) {
-    const it = gear[slot.id];
+    const it = gearMap[slot];
     if (!it) continue;
-    for (const [k, v] of Object.entries(itemStats(it))) add(k, v);
+    for (const [k, v] of Object.entries(itemStats(it))) A(k, v);
+    if (it.unique) uniques.push(it.unique);
   }
-  const tb = treeBonuses(state);
-  for (const [k, v] of Object.entries(tb.stats)) add(k, v);
-  for (const [k, v] of Object.entries(classBonuses(state, gear))) add(k, v);
-  const role = (CLASS_BY_ID[state.cls] || {}).role || 'dps';
-  for (const [k, v] of Object.entries(ROLES[role].bonus)) add(k, v);
-  if (state.petBonus) for (const [k, v] of Object.entries(state.petBonus)) add(k, v);
-  const ks = tb.keystones;
-  const g = (k) => t[k] || 0;
-  const hasWeapon = !!gear.weapon;
-  const incDmg = g('incAll');
-  let more = 1, eleMore = 1;
-  if (ks.has('resolute')) more *= 1.45;
-  if (ks.has('glass')) more *= 1.6;
-  if (ks.has('overload')) eleMore *= 1.3;
-  if (ks.has('lifebloom')) more *= 0.7;
-  more *= 1 + g('moreDmg') / 100;
-  const mastery = isClassWeapon(state, gear.weapon);
-  if (mastery) more *= 1 + WEAPON_MASTERY;
-  const convert = ks.has('overload') ? 1 : Math.min(1, g('convert'));
-  const physMinRaw = (hasWeapon ? g('w_physMin') : 2) + g('addPhysMin');
-  const physMaxRaw = (hasWeapon ? g('w_physMax') : 4) + g('addPhysMax');
-  const physMult = (1 + (g('incPhys') + incDmg) / 100) * more;
-  const eleMult = (1 + (g('incEle') + incDmg) / 100) * more * eleMore;
-  let armour = 10 + g('armour'), evasion = 10 + g('evasion');
-  let incArm = g('incArmour'), incEva = g('incEvasion');
-  if (ks.has('ironRefl')) { armour += evasion; incArm += incEva + 20; evasion = 0; incEva = 0; }
-  let armMore = 1, evaMore = 1;
-  if (ks.has('acrobatics')) { evaMore = 1.3; armMore = 0.5; }
-  const st = {
-    keystones: ks,
-    role,
-    mastery,
-    healMult: (1 + g('incHeal') / 100) * (1 + g('healMore') / 100) * (ks.has('lifebloom') ? 1.6 : 1),
-    dr: Math.min(0.6, g('dr') / 100),
-    cdr: Math.min(60, g('cdr')),
-    skillPow: g('skillPow'),
-    physMin: physMinRaw * (1 - convert) * physMult,
-    physMax: physMaxRaw * (1 - convert) * physMult,
-    eleMin: (g('addEleMin') + physMinRaw * convert) * eleMult,
-    eleMax: (g('addEleMax') + physMaxRaw * convert) * eleMult,
-    aps: Math.min(8, (hasWeapon ? g('w_aps') : 1.2) * (1 + g('aps') / 100)),
-    crit: ks.has('resolute') ? 0 : Math.min(95, (hasWeapon ? g('w_crit') : 5) * (1 + g('critChance') / 100)),
-    critMulti: 150 + g('critMulti') + (ks.has('assassin') ? 120 : 0),
-    nonCritMult: ks.has('assassin') ? 0.6 : 1,
-    maxLife: (50 + 14 * (state.level - 1) + g('life')) * (1 + g('incLife') / 100) * (ks.has('glass') ? 0.5 : 1),
-    armour: armour * (1 + incArm / 100) * armMore,
-    evasion: evasion * (1 + incEva / 100) * evaMore,
-    evadeCap: Math.min(0.9, (ks.has('acrobatics') ? 0.85 : 0.7) + g('evadeCap') / 100),
-    resistCap: Math.min(90, RESIST_CAP + (ks.has('bulwark') ? 10 : 0) + g('maxRes')),
-    resistRaw: g('resist'),
-    block: gear.offhand ? Math.min(60, g('block')) : 0,
-    lifeOnHit: g('lifeOnHit'),
-    lifeOnHitPct: g('lifeOnHitPct'),
-    leech: Math.min(30, g('leech') * (ks.has('vaalPact') ? 3 : 1)),
-    goldFind: g('goldFind'),
-    rarity: g('rarity'),
-    xpGain: g('xpGain'),
-  };
-  st.regen = ks.has('vaalPact') ? 0 : g('regen') + st.maxLife * (g('regenPct') + (ks.has('bulwark') ? 1 : 0)) / 100;
-  st.resist = Math.min(st.resistCap, st.resistRaw - resistPenalty(combatLevel(state)));
-  const avgHit = (st.physMin + st.physMax) / 2 + (st.eleMin + st.eleMax) / 2;
-  st.avgHit = avgHit;
-  const cc = st.crit / 100;
-  st.dps = avgHit * st.aps * ((1 - cc) * st.nonCritMult + cc * st.critMulti / 100);
+  uniques.forEach((u) => flags.add(u));
+  // spec
+  const spec = specOf(state);
+  if (spec) {
+    for (const [k, v] of Object.entries(spec.t1)) A(k, v);
+    if (state.level >= 40 || state.ascensions) for (const [k, v] of Object.entries(spec.t2)) A(k, v);
+  }
+  // talents
+  const treeDmg = {};
+  for (const t of cls.trees) {
+    const ranks = state.talents[t.id] || [];
+    TALENT_STATS[t.id].forEach((st, i) => {
+      const r = ranks[i] || 0;
+      if (!r) return;
+      if (st === 'treeDmg') treeDmg[t.id] = (treeDmg[t.id] || 0) + r * TALENT_VAL.treeDmg;
+      else A(st, r * TALENT_VAL[st]);
+    });
+  }
+  if (spec) treeDmg[spec.tree] = (treeDmg[spec.tree] || 0) + 20;
+  // companions
+  for (const [k, v] of Object.entries(companionBonus(state, add.petBonus || 0))) A(k, v);
+  // runes
+  let furyAspd = 0;
+  for (const r of state.runesEquipped || []) {
+    if (!r) continue;
+    const rank = state.runes[r] || 0;
+    if (!rank) continue;
+    const d = RUNES[r];
+    for (const [k, v] of Object.entries(d.stat(rank))) A(k, v);
+    if (d.flag) flags.add(d.flag);
+    if (d.fury) furyAspd += d.fury(rank);
+  }
+  // inscriptions
+  for (const ins of state.inscribed || []) if (ins) A(ins.stat, ins.v);
+  for (const [tag, n] of Object.entries(inscriptionSets(state))) {
+    for (const [need, m] of Object.entries(INSCR_TAGS[tag].sets)) if (n >= +need) for (const [k, v] of Object.entries(m)) { if (v === 1 && !['leech'].includes(k)) flags.add(k); else A(k, v); }
+  }
+  // ascension perks + mastery
+  for (const [p, r] of Object.entries(state.ascPerks || {})) if (ASC_PERKS[p].stat) for (const [k, v] of Object.entries(ASC_PERKS[p].stat)) A(k, v * r);
+  const mastery = state.mastery || 0;
+  A('more', mastery * 0.5); A('hpPct', mastery * 0.5);
+  // run modifiers (rifts)
+  const rm = run?.mods || {};
+  A('crit', rm.heroCrit); A('cdr', rm.heroCdr); A('leech', rm.heroLeech);
+  for (const f of ['burnExplode', 'freezeChance', 'critChain', 'smite']) if (add[f]) { flags.add(f); }
 
-  // Defensive picture against the current stage
-  const mon = monsterFor(combatLevel(state), false, 'normal');
-  st.evadeChance = evadeChance(st.evasion, mon.acc, st.evadeCap);
-  st.armourRed = armourReduction(st.armour, mon.dmg);
-  const resRed = st.resist / 100;
-  const taken = (1 - st.evadeChance) * (1 - st.block / 100) *
-    (mon.physShare * (1 - st.armourRed) + (1 - mon.physShare) * (1 - resRed));
-  st.damageTakenMult = Math.max(0.02, taken * (1 - st.dr));
-  st.ehp = st.maxLife / st.damageTakenMult;
-  const sustain = st.regen + (st.lifeOnHit + st.maxLife * st.lifeOnHitPct / 100) * st.aps + st.dps * st.leech / 100;
-  st.sustain = sustain;
-  // Power: geometric mean of offence and (sustain-adjusted) defence
-  const ehpS = st.ehp + (sustain * 8) / st.damageTakenMult;
-  const util = 1 + st.goldFind * 0.0005 + st.rarity * 0.001 + st.xpGain * 0.001;
-  const skillF = (1 + st.skillPow / 100 * 0.35) * (1 + st.cdr / 100 * 0.3);
-  // Healing throughput: healers convert their hits into heals
-  st.hps = st.avgHit * st.aps * 0.8 * st.healMult;
-  // Role-weighted power: tanks value defence, DPS value damage, healers value healing
-  const off = st.dps * skillF;
-  if (role === 'tank') st.power = Math.pow(off, 0.3) * Math.pow(ehpS, 0.7) * util;
-  else if (role === 'healer') st.power = Math.pow(st.hps * skillF, 0.6) * Math.pow(ehpS, 0.4) * util;
-  else st.power = Math.pow(off, 0.7) * Math.pow(ehpS, 0.3) * util;
+  // attributes
+  const at = {};
+  for (const k of ATTR_KEYS) at[k] = 10 + cls.grow[k] * (state.level - 1) + (state.attrs[k] || 0) + (add[k] || 0) + (add.allAttr || 0);
+
+  const lv = state.level;
+  const hpBase = 100 + 20 * S(lv) + (add.hp || 0);
+  const hp = hpBase * (1 + ((add.hpPct || 0) + at.vit * 0.6) / 100);
+  const armour = (5 * S(lv) + (add.armour || 0)) * (1 + ((add.armourPct || 0) + at.vit * 0.3) / 100);
+  const attack = (2 + 1.5 * S(lv) + (add.attack || 0)) * (1 + (add.attackPct || 0) / 100);
+  const typePct = cls.dmg === 'phys' ? (add.phys || 0) + at.str * 0.6 : (add.magic || 0) + at.int * 0.6;
+  const elem = {};
+  for (const e of ELEMS) elem[e] = (add[e] || 0) + (e !== 'poison' ? add.ele || 0 : 0);
+  elem.phys = 0; elem.nature = add.ele || 0;
+  const aspd = 1.0 * (1 + ((add.aspd || 0) + at.dex * 0.15) / 100);
+  const crit = Math.min(75, 5 + (add.crit || 0) + at.dex * 0.04);
+  const critDmg = 50 + (add.critDmg || 0);
+  const cdr = Math.min(50, (add.cdr || 0) + at.wis * 0.12);
+  const resist = Math.min(75, (add.resist || 0) * (rm.halfRes ? 0.5 : 1));
+  const st = {
+    lv, attrs: at, hp, armour, attack, typePct, elem, aspd, crit, critDmg, cdr, resist,
+    leech: add.leech || 0, boss: add.boss || 0, elite: add.elite || 0, dr: Math.min(60, add.dr || 0),
+    regen: 8 * (1 + ((add.regen || 0) + at.wis * 0.5) / 100), hpRegen: (add.hpRegen || 0),
+    gold: add.gold || 0, mf: add.mf || 0, xp: add.xp || 0, more: 1 + (add.more || 0) / 100,
+    burnDmg: add.burnDmg || 0, poisonDmg: add.poisonDmg || 0, bleedDmg: add.bleedDmg || 0, chillDur: add.chillDur || 0,
+    frozenTaken: add.frozenTaken || 0, buffDur: add.buffDur || 0, frenzy: add.frenzy || 0, thorns: add.thorns || 0,
+    petDmg: add.petDmg || 0, poisonCrit: add.poisonCrit || 0, minionDmg: add.minionDmg || 0, minionMax: Math.floor(add.minionMax || 0),
+    execute: add.execute || 0, killHeal: add.killHeal || 0, healPct: add.healPct || 0, vulnPct: 15 + (add.vulnPct || 0),
+    shieldPct: add.shieldPct || 0, freezeChance: add.freezeChance || 0, doubleCast: add.doubleCast || 0, furyAspd, healEvery: add.healEvery || 0, treeDmg, flags,
+  };
+  st.power = powerOf(state, st);
   return st;
 }
 
-export const evadeChance = (ev, acc, cap = 0.7) => Math.min(cap, ev / (ev + acc * 2.5));
-export const armourReduction = (armour, hit) => Math.min(0.9, armour / (armour + 8 * hit));
-
-// Which slot would an item go into, and what would it replace?
-export function targetSlot(state, item) {
-  if (item.type !== 'ring') return item.type;
-  const r1 = state.gear.ring1, r2 = state.gear.ring2;
-  if (!r1) return 'ring1';
-  if (!r2) return 'ring2';
-  // replace whichever ring gives the better result
-  const a = powerWith(state, 'ring1', item), b = powerWith(state, 'ring2', item);
-  return a >= b ? 'ring1' : 'ring2';
+// a single comparable number: geometric blend of damage and toughness
+export function powerOf(state, st) {
+  const skillElems = Object.values(state.skills || {}).filter(Boolean).map((id) => SKILLS[id]?.elem).filter(Boolean);
+  const avgElem = skillElems.length ? skillElems.reduce((s, e) => s + (st.elem[e] || 0), 0) / skillElems.length : 0;
+  const treeAvg = Object.values(st.treeDmg).reduce((a, b) => a + b, 0) / 3;
+  const dps = st.attack * (1 + (st.typePct + avgElem + treeAvg) / 100) * st.more * st.aspd * (1 + (st.crit / 100) * (st.critDmg / 100)) * (1 + st.boss / 300) * (1 + st.cdr / 150);
+  const red = armourReduction(st.armour, st.lv);
+  const ehp = st.hp / (1 - red * 0.6) / (1 - (st.resist / 100) * 0.4) / (1 - st.dr / 100) * (1 + st.leech / 20);
+  return Math.round(Math.pow(dps, 0.55) * Math.pow(ehp, 0.45));
 }
-
-export function powerWith(state, slot, item) {
-  const gear = { ...state.gear, [slot]: item };
-  return computeStats(state, gear).power;
+export const unlockedSlots = (state) => ['primary', 'defensive', 'aoe', 'secondary', 'utility', 'ultimate'].filter((r, i) => state.ascensions || state.level >= [1, 5, 20, 30, 40, 50][i]);
+export { unlocked };
+export function talentCapacity(state) {
+  const cls = CLASSES[state.cls];
+  return cls.trees.reduce((s, t) => s + 6 * talentMax(state, t.id) - (state.talents[t.id] || []).reduce((a, b) => a + b, 0), 0);
 }
-
-// Returns { slot, gain } where gain is fractional power change
-export function evaluateItem(state, item, basePower) {
-  const slot = targetSlot(state, item);
-  const base = basePower ?? computeStats(state).power;
-  const p = powerWith(state, slot, item);
-  return { slot, gain: p / base - 1 };
-}
-
-export const xpToNext = (level) => Math.ceil(22 * S(level) * (1 + level * 0.06));
+export const talentFree = (state) => Math.max(0, Math.min(talentPointsTotal(state) - talentPointsSpent(state), talentCapacity(state)));

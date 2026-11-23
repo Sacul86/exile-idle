@@ -1,1171 +1,675 @@
-import { RARITIES, SLOTS, TYPE_ICONS, zoneFor, zoneIndex, ZONES, isBossStage, MONSTERS_PER_STAGE, resistPenalty, S, MYTHIC_BY_ID } from './data.js';
-import {
-  fmt, describeAffix, describeImplicit, salvageValue, upgradeCost, canUpgrade, rerollCost, rerollItem,
-  canPromote, promoteCost, promoteItem,
-} from './items.js';
-import { computeStats, xpToNext, targetSlot } from './stats.js';
-import {
-  CLASSES, CLASS_BY_ID, NODES, KEYSTONES, ROLES, ROLE_ORDER, treePointsFree, treePointsTotal, pathTo, canRefund,
-  nodeLines, refundCost, resetCost, allocatedSet, TREE_SKILLS, socketsInReach,
-} from './tree.js';
-import { SKILLS, skillsFor, SKILL_BY_ID, skillSlots, skillUpgradeCost, MAX_SKILL_RANK, MILESTONES, skillMods, skillEffective, skillDescFull, respecModCost, synergyLines, TAG_INFO, STATUS, SKILL_SLOTS } from './skills.js';
-import { Arena } from './fx.js';
-import { predict, RATINGS, rate } from './predict.js';
-import { CLASS_WEAPONS, WEAPON_MASTERY, SETS, SET_SLOTS, setCounts, ASCENDANCY, ASC_LEVELS, ascRespecCost, isClassWeapon } from './classdata.js';
-import { PETS, PET_BY_ID, PET_MAX_LEVEL, petUpgradeCost, bonusText, invasionStatus, worldBossToday, INVASION_TIME, BOX_INFO, SHOP } from './pets.js';
-import { equipBest, bestSkills, bestAscendancy, bestPet, bestStones, optimiseAll, describeResult } from './optimize.js';
-import { renderTreeSvg, zoom, centerOn, getSelected, setSelected, resetView } from './treeview.js';
-import {
-  newState, newHero, load, save, tick, ensureCombat, refreshStats, simulate, salvage, equipFromBag, unequip, BAG_SIZE, SAVE_KEY,
-  startRun, abandonRun, syncSkills, dungeonTiers, raidUnlocked, dungeonLevel, raidLevel, dungeonName, raidName, DUNGEON,
-  enrageMult, autoAllocate, charOf, partyReady, bestHeroFor, hatchEgg, openBox, buyShop, availableSkills, stoneBoosts, lootTable,
-} from './game.js';
+// Eternal Ascent UI: 5 tabs (Battle, Character, Equipment, Skills, Activities), modals, settings, offline report.
+import { CLASSES, CLASS_KEYS, ATTRS, ATTR_KEYS, UNLOCKS, unlocked, SLOTS, SLOT_INFO, RARITIES, UNIQUES, GEMS, GEM_KEYS, GEM_TIERS, gemValue, RUNES, RUNE_KEYS, RUNE_MAX, runeCraftCost, runeSlots,
+  INSCR_TAGS, INSCR_SLOTS, COMPANIONS, COMP_KEYS, evoOf, EVOLUTIONS, MATERIALS, MAT_KEYS, RECIPES, REGIONS, STAGES_PER_REGION, WAVES_PER_STAGE, regionOf, stageLevel, MAX_STAGE,
+  WORLD_TIERS, DUNGEONS, DUNGEON_KEYS, ACTIVITIES, ASC_PERKS, STAT_NAMES, PCT_STATS, TALENT_STATS, TALENT_VAL, specOf, LEVEL_CAP, ELITE_MODS, AFFIXES } from './data.js';
+import { itemStats, statLine, fmt, enhanceCost, refineCost, enchantCost, awakenItemCost, canAwaken, ENHANCE_MAX, REFINE_MAX, ENCHANT_MAX, salvageValue } from './items.js';
+import { computeStats, xpToNext, masteryXp, talentPointsTotal, talentPointsSpent, talentFree, talentMax, talentRowOpen, attrPointsTotal, attrPointsSpent, unlockedSlots, inscriptionSets, companionBonus } from './stats.js';
+import { SKILLS, SLOT_ROLES, skillsForRole, skillText, skillUpgradeCost, SKILL_MAX, awakenCost, STATUS, ELEM_ICONS } from './skills.js';
+import * as sys from './systems.js';
+import { tick, ensureCombat, setStage, startRun, leaveRun, simulateOffline, refreshStats, runLevel } from './game.js';
+import { optimiseAll } from './optimize.js';
+import { Arena, setSkillNamer, fmtN } from './fx.js';
 
-export const VERSION = '2026.11.23-e';
-let state = load() || newState();
-const arena = new Arena();
-ensureCombat(state);
-let tab = 'battle';
-let heroSub = 'gear';
-let bagFilter = -1;
-let skillPick = null;
-let skillTag = 'all';
-let modalCtx = null;
-const $ = (s) => document.querySelector(s);
+const VERSION = '2026.11.23-ea2';
+const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
-const ev = [];
+const arena = new Arena();
+setSkillNamer((id) => SKILLS[id]?.name || id);
+let state = sys.load();
+let tab = 'battle';
+const sub = { character: 'stats', equipment: 'gear', skills: 'slots', activities: 'list' };
+let bagFilter = { slot: 'all', rarity: -1 };
+const lootLog = [];
+let pendingReport = null;
 
-// ---------- helpers ----------
-const HI = () => state.ui.hero;
-const H = () => state.heroes[HI()];
-const C = () => charOf(state, HI());
-const HC = (i = HI()) => state.combat.heroes[i];
-const HS = (i = HI()) => HC(i).stats;
-const rc = (r) => 'r' + r;
-const nc = (it) => (it.set ? 'rset' : 'r' + it.rarity);
-const bcl = (it) => (it.set ? 'bcset' : 'bc' + it.rarity);
-const WICONS = { Dagger: '🗡️', Sword: '⚔️', Axe: '🪓', Mace: '🔨', Wand: '🪄', Staff: '🔮', Claw: '🐾', Bow: '🏹', Sceptre: '🏵️' };
-const icon = (item) => item.type === 'weapon' ? WICONS[item.kind] || '🗡️' : TYPE_ICONS[item.type];
-const costOk = (c) => state.gold >= c.gold && state.shards >= c.shards;
-const costText = (c) => `🪙${fmt(c.gold)} 💠${fmt(c.shards)}`;
-const heroImg = (cls, cl = 'portrait') => cls ? `<img class="${cl}" src="assets/heroes/${cls}.webp" alt="">` : `<div class="${cl} empty">?</div>`;
-const petImg = (id, cl = 'pet-img') => `<img class="${cl}" src="assets/pets/${id}.webp" alt="">`;
-const roleOf = (i) => state.heroes[i].role;
-const heroName = (i) => { const h = state.heroes[i]; return h.cls ? CLASS_BY_ID[h.cls].name : ROLES[h.role].name; };
-function toast(msg) {
+// ---------------- helpers ----------------
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const rc = (r) => RARITIES[r].color;
+const costHtml = (cost) => Object.entries(cost).filter(([, v]) => v).map(([k, v]) => {
+  const have = k === 'gold' ? state.gold : state.mats[k] || 0;
+  return `<span class="${have >= v ? '' : 'bad'}">${k === 'gold' ? '🪙' : MATERIALS[k].icon}${fmt(v)}</span>`;
+}).join(' ');
+const st = () => sys.stats(state);
+function toast(html, cls = '') {
   const t = document.createElement('div');
-  t.className = 'toast'; t.innerHTML = msg;
+  t.className = 'toast ' + cls; t.innerHTML = html;
   $('#toasts').appendChild(t);
-  setTimeout(() => t.remove(), 2500);
-  while ($('#toasts').children.length > 3) $('#toasts').firstChild.remove();
+  setTimeout(() => t.classList.add('out'), 2600);
+  setTimeout(() => t.remove(), 3100);
+  while ($('#toasts').children.length > 4) $('#toasts').firstChild.remove();
 }
-function zoneLabel(stage) {
-  const cycle = Math.floor(zoneIndex(stage) / ZONES.length);
-  return zoneFor(stage).name + (cycle ? ` <span class="muted">· Cycle ${cycle + 1}</span>` : '');
+function modal(html, cls = '') { $('#modal-card').className = 'modal-card ' + cls; $('#modal-card').innerHTML = html; $('#modal').classList.remove('hidden'); }
+function closeModal() { $('#modal').classList.add('hidden'); }
+const stageName = (s) => `${Math.ceil(s / STAGES_PER_REGION)}-${((s - 1) % STAGES_PER_REGION) + 1}`;
+let audioCtx = null;
+function sfx(kind) {
+  if (!state?.settings.sound) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    const f = { crit: 520, loot: 880, level: 660, boss: 180, hurt: 120 }[kind] || 440;
+    o.frequency.value = f; o.type = kind === 'boss' || kind === 'hurt' ? 'sawtooth' : 'triangle';
+    g.gain.value = 0.05; g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.25);
+    o.connect(g).connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.25);
+  } catch (_) {}
 }
-function afterChange() { syncSkills(state); refreshStats(state); save(state); render(); }
-const fmtTime = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? `${h}h ${m}m` : `${m}m ${s % 60}s`; };
+function applySettings() {
+  document.documentElement.dataset.text = state.settings.text;
+  arena.opt(state.settings);
+}
 
-// ---------- HUD ----------
-function renderHud() {
-  const need = xpToNext(state.level);
-  $('#hud-level').textContent = state.level;
-  $('#hud-xp').style.width = (100 * state.xp / need) + '%';
-  $('#hud-xp-text').textContent = `${fmt(state.xp)} / ${fmt(need)} XP`;
+// ---------------- HUD ----------------
+function hud() {
+  const s = st();
+  $('#hud-cls').textContent = CLASSES[state.cls].icon;
+  $('#hud-level').textContent = state.level >= LEVEL_CAP ? `${LEVEL_CAP} · M${state.mastery}` : state.level;
+  const need = state.level >= LEVEL_CAP ? masteryXp(state.mastery) : xpToNext(state.level);
+  const cur = state.level >= LEVEL_CAP ? state.masteryXp : state.xp;
+  $('#hud-xp').style.width = Math.min(100, (cur / need) * 100) + '%';
+  $('#hud-xp-text').textContent = `${fmt(cur)} / ${fmt(need)} ${state.level >= LEVEL_CAP ? 'mastery' : 'xp'}`;
   $('#hud-gold').textContent = fmt(state.gold);
-  $('#hud-shards').textContent = fmt(state.shards);
-  $('#hud-emblems').textContent = fmt(state.emblems);
-  $('#hud-power').textContent = fmt(state.combat.party.power);
-  const newCount = state.bag.filter((b) => b.isNew).length;
-  $('#bag-badge').textContent = newCount ? (newCount > 99 ? '99+' : newCount) : '';
-  const pts = state.heroes.reduce((a, h, i) => a + (h.cls ? Math.max(0, treePointsFree(charOf(state, i))) : 0), 0);
-  $('#tree-badge').textContent = !partyReady(state) ? '!' : pts > 0 ? pts : (state.heroes.some((_, i) => ascPending(i)) ? '!' : '');
-  const inv = invasionStatus(state);
-  const eg = (inv.open && !inv.used ? 1 : 0) + Object.values(state.boxes).reduce((a, b) => a + b, 0);
-  $('#end-badge').textContent = state.run ? '⚔️' : eg ? eg : '';
-  $('#pet-badge').textContent = state.eggs ? state.eggs : '';
+  $('#hud-power').textContent = fmt(s.power);
+  const wt = WORLD_TIERS[state.worldTier];
+  $('#hud-tier').textContent = wt.name; $('#hud-tier').style.color = wt.color;
+  $('#hud-asc').textContent = state.ascensions ? `✦${state.ascensions}` : '';
+  // badges
+  const freeT = unlocked(state, 'talents') ? talentFree(state) : 0;
+  $('#badge-character').textContent = (state.level >= 10 && !state.spec ? '!' : '') || (freeT > 0 ? freeT : '');
+  const nb = state.bag.filter((i) => i.isNew).length;
+  $('#badge-equipment').textContent = nb ? (nb > 9 ? '9+' : nb) : '';
 }
 
-// ---------- Battle ----------
+// ---------------- Battle ----------------
 function renderBattle() {
-  const p = state.combat.party;
-  const boss = isBossStage(state.stage);
-  const run = state.run;
-  const runTitle = run ? (run.kind === 'raid' ? '🔱 ' + raidName(run.tier) : run.kind === 'invasion' ? `🐉 World Boss: ${run.name}` : '🗝️ ' + dungeonName(run.tier)) : '';
-  const header = run ? `
-    <div class="panel run-panel ${run.kind}">
-      <div class="zone"><span class="name">${runTitle}</span><span class="muted">Lv ${run.level}</span></div>
-      <div class="hud-row" style="margin-top:6px">
-        <b id="run-prog" style="white-space:nowrap"></b>
-        <div class="bar stage"><div id="run-time" class="fill"></div><span id="run-time-t"></span></div>
-      </div>
-      <div class="stage-ctl"><button class="btn small danger" data-act="abandon" style="flex:1">${run.kind === 'invasion' ? 'End fight & collect' : 'Abandon run'}</button></div>
-    </div>` : `
-    <div class="panel">
-      <div class="zone"><span class="name">${zoneLabel(state.stage)}</span><span class="muted">Best ${state.maxStage}</span></div>
-      <div class="hud-row" style="margin-top:6px">
-        <b style="white-space:nowrap">Stage ${state.stage}${boss ? ' 👑' : ''}</b>
-        <div class="bar stage"><div id="stage-fill" class="fill"></div><span id="stage-text"></span></div>
-      </div>
-      <div class="stage-ctl">
-        <button class="btn small" data-act="stage-prev" ${state.stage <= 1 ? 'disabled' : ''}>◀</button>
-        <button class="btn small" data-act="stage-next" ${state.stage >= state.maxStage ? 'disabled' : ''}>▶</button>
-        <button class="btn small toggle ${state.settings.autoAdvance ? 'on' : ''}" data-act="auto-adv" style="flex:1">
-          Auto-advance ${state.settings.autoAdvance ? 'ON' : 'OFF'}</button>
-      </div>
-    </div>`;
-  view.innerHTML = `${header}
-    <div id="blocked" class="blocked-note ${state.pushBlocked && state.settings.autoAdvance && !run ? '' : 'hidden'}">
-      <span>☠️ Too strong here. Farming stage ${state.stage} until your party gets stronger.</span>
-      <button class="btn small primary" data-act="push">Push</button>
+  const r = state.run;
+  const reg = REGIONS[regionOf(state.stage)];
+  const head = r ? `<div class="zone"><div><div class="name">${ACTIVITIES[r.kind].icon} ${runTitle(r)}</div><div class="muted small">${runSub(r)}</div></div>
+      <button class="btn small danger" data-act="leave">Leave</button></div>`
+    : `<div class="zone"><div><div class="name">${reg.name}</div><div class="muted small">Stage <b>${stageName(state.stage)}</b> · monster lvl ${stageLevel(state.stage)} · best ${stageName(state.maxStage)}</div></div>
+      <div class="stage-ctl"><button class="btn small" data-act="stage" data-d="-1">◀</button><button class="btn small ${state.autoAdvance ? 'toggle on' : 'toggle'}" data-act="auto">Auto ${state.autoAdvance ? 'on' : 'off'}</button><button class="btn small" data-act="stage" data-d="1">▶</button></div></div>`;
+  view.innerHTML = `
+    <div class="panel tight">${head}<div class="waves" id="waves"></div></div>
+    <div class="arena" id="arena"><div class="bossbar hidden" id="bossbar"><div class="bb-name" id="bb-name"></div><div class="bar boss"><div class="fill" id="bb-fill"></div><span id="bb-text"></span></div><div class="tele hidden" id="tele"><div class="fill" id="tele-fill"></div><span id="tele-text"></span></div></div></div>
+    <div class="herobars">
+      <div class="bar hp"><div class="fill" id="h-hp"></div><div class="shield" id="h-sh"></div><span id="h-hp-t"></span></div>
+      <div class="bar res"><div class="fill" id="h-res"></div><span id="h-res-t"></span></div>
     </div>
-    <div class="arena ${run ? 'in-run ' + run.kind : ''}" id="arena">
-      ${run ? `<div class="run-banner ${run.kind}"><b>${run.kind === 'raid' ? '🔱 RAID' : run.kind === 'invasion' ? '🐉 WORLD BOSS' : '🗝️ VAULT'}</b><span id="rb-prog"></span><span id="rb-time"></span></div>` : ''}
-      <div class="fighter m" id="fm">
-        <div class="bar mhp"><div class="trail" id="m-trail"></div><div class="fill" id="m-hp"></div><span id="m-hp-t"></span></div>
-        <div class="label" id="m-name"></div>
-      </div>
+    <div class="skillbar" id="skillbar">${SLOT_ROLES.map((ro) => `<div class="sk" data-role="${ro.id}" data-act="gotoSkills"><div class="ic"></div><div class="cd"></div><div class="lbl"></div></div>`).join('')}</div>
+    <div class="row2">
+      <button class="btn primary grow" data-act="optimise">⚡ Optimise</button>
+      <button class="btn grow" data-act="tab" data-tab="activities">🗺️ Activities</button>
     </div>
-    <div class="party-row">${state.heroes.map((h, i) => `
-      <div class="pchip" data-act="goto-hero" data-i="${i}">
-        ${heroImg(h.cls, 'pc-img')}
-        <div class="pc-body">
-          <div class="pc-name"><span class="role-ic">${ROLES[h.role].icon}</span> ${heroName(i)}</div>
-          <div class="bar hp small"><div class="fill" id="php-${i}"></div></div>
-          <div class="pc-skills">${h.skills.bar.slice(0, SKILL_SLOTS).map((id) => id && SKILL_BY_ID[id] ? `<span class="sk mini"><span>${SKILL_BY_ID[id].icon}</span><i class="cd" data-cd="${i}:${id}"></i></span>` : '').join('')}</div>
-        </div>
-      </div>`).join('')}</div>
-    <div class="opt-row"><button class="btn small primary" data-act="opt-party">⚡ Optimise party</button></div>
-    <div class="kv panel">
-      <div><b id="b-dps">${fmt(p.dps)}</b><small>Party DPS</small></div>
-      <div><b id="b-hps">${fmt(p.hps)}</b><small>Healing/s</small></div>
-      <div><b id="b-ehp">${fmt(p.tankEhp)}</b><small>Tank EHP</small></div>
-    </div>
-    <div class="panel">
-      <h2>Loot</h2>
-      <div class="feed" id="feed"></div>
-    </div>`;
+    <div class="panel"><h3>Next goals</h3><div id="goals"></div></div>
+    <div class="panel"><h3>Recent loot</h3><div id="lootlog" class="lootlog"></div></div>`;
   arena.mount($('#arena'));
-  renderFeed();
-  updateBattle();
+  refreshGoals(); refreshLootLog();
+  battleTick(true);
 }
-function renderFeed() {
-  const f = $('#feed');
-  if (!f) return;
-  f.innerHTML = state.lootLog.slice(0, 12).map((l) =>
-    `<div><span class="${l.set ? 'rset' : rc(l.rarity)}">${TYPE_ICONS[l.type]} ${l.name} <span class="muted">i${l.ilvl}</span></span><span class="act ${l.action}">${l.action === 'equipped' && l.hero != null ? `→ ${ROLES[roleOf(l.hero)].icon} ${heroName(l.hero)}` : l.action}</span></div>`
-  ).join('') || '<div class="muted">Kill monsters to find loot.</div>';
+function runTitle(r) {
+  if (r.kind === 'dungeon') return `${DUNGEONS[r.key].name} T${r.tier}`;
+  if (r.kind === 'tower') return `Endless Tower — floor ${r.floor}`;
+  if (r.kind === 'rift') return `Rift ${r.tier}`;
+  return ACTIVITIES[r.kind].name;
 }
-let lastMonster = null;
-function updateBattle() {
-  if (tab !== 'battle' || !$('#arena')) return;
-  const c = state.combat, m = c.monster, run = state.run;
-  if (!!run !== !!$('.run-panel')) { renderBattle(); return; }
-  if (run) {
-    $('#run-prog').textContent = run.kind === 'raid' ? `Phase ${run.phase}/3` : run.kind === 'invasion' ? `💥 ${fmt(run.damage)}` : run.room > DUNGEON.rooms ? 'Boss' : `Room ${run.room}/${DUNGEON.rooms}`;
-    const left = Math.max(0, run.timeLimit - run.time);
-    $('#run-time').style.width = (100 * left / run.timeLimit) + '%';
-    $('#run-time-t').textContent = `${Math.ceil(left)}s left`;
-    const rp = $('#rb-prog'), rt = $('#rb-time');
-    if (rp) { rp.textContent = $('#run-prog').textContent; rt.textContent = `⏱ ${Math.ceil(left)}s`; rt.classList.toggle('urgent', left < 20); }
-  } else {
-    const needed = isBossStage(state.stage) ? 1 : MONSTERS_PER_STAGE;
-    $('#stage-fill').style.width = (100 * state.kills / needed) + '%';
-    $('#stage-text').textContent = `${state.kills} / ${needed}`;
+function runSub(r) {
+  if (r.kind === 'rift') return r.modList.map((m) => m.text).join(' · ');
+  if (r.kind === 'dungeon') return DUNGEONS[r.key].text + ` · lvl ${r.lvl}`;
+  if (r.kind === 'vault') return `${Math.max(0, Math.ceil(r.timeLimit - r.t))}s left`;
+  if (r.kind === 'tower') return `Best floor ${state.towerBest} · milestone every 10 floors`;
+  return `Level ${r.lvl}`;
+}
+function refreshGoals() { const el = $('#goals'); if (el) el.innerHTML = sys.nextGoals(state).slice(0, 3).map((g) => `<div class="goal" data-act="tab" data-tab="${g.tab}">➜ ${esc(g.text)}</div>`).join(''); }
+function refreshLootLog() { const el = $('#lootlog'); if (el) el.innerHTML = lootLog.length ? lootLog.map((l) => `<div style="color:${rc(l.rarity)}">${esc(l.name)} <span class="muted">${l.res === 'equipped' ? '✓ equipped' : l.res === 'salvaged' ? 'salvaged' : 'to bag'}</span></div>`).join('') : '<div class="muted">Nothing yet.</div>'; }
+
+let lastBattleDom = 0;
+function battleTick(force) {
+  if (tab !== 'battle') return;
+  const now = performance.now();
+  if (!force && now - lastBattleDom < 100) return;
+  lastBattleDom = now;
+  const c = state.combat; if (!c) return;
+  const h = c.hero, S = c.st;
+  const hpk = Math.max(0, h.hp / S.hp);
+  const hp = $('#h-hp'); if (!hp) return;
+  hp.style.width = hpk * 100 + '%';
+  $('#h-sh').style.width = Math.min(100, (h.shield / S.hp) * 100) + '%';
+  $('#h-hp-t').textContent = h.dead > 0 ? `Respawning ${Math.ceil(h.dead)}s` : `${fmt(h.hp)} / ${fmt(S.hp)}${h.shield > 0 ? ` (+${fmt(h.shield)})` : ''}`;
+  $('#h-res').style.width = h.res + '%';
+  $('#h-res-t').textContent = `${CLASSES[state.cls].res} ${Math.floor(h.res)}`;
+  const waves = $('#waves');
+  const total = state.run ? (state.run.kind === 'tower' ? 0 : c.waves) : WAVES_PER_STAGE;
+  if (waves) waves.innerHTML = total ? Array.from({ length: total }, (_, i) => `<i class="${i < c.wave ? 'done' : i === c.wave ? 'cur' : ''} ${(!state.run && state.stage % 10 === 0 && i === total - 1) || (state.run && i === total - 1 && ['dungeon', 'rift'].includes(state.run.kind)) ? 'boss' : ''}"></i>`).join('') : '';
+  const boss = c.enemies.find((e) => e.boss && e.hp > 0);
+  const bb = $('#bossbar');
+  if (boss) {
+    bb.classList.remove('hidden');
+    $('#bb-name').innerHTML = `${esc(boss.name)} <span class="muted">· ${esc(boss.phaseNames[boss.phase] || '')}${boss.enraged ? ' · <b class="bad">Enraged</b>' : ''}</span>`;
+    $('#bb-fill').style.width = (boss.hp / boss.maxHp) * 100 + '%';
+    $('#bb-text').textContent = `${fmt(boss.hp)} (${Math.ceil((boss.hp / boss.maxHp) * 100)}%)`;
+    const te = $('#tele');
+    if (boss.tele) { te.classList.remove('hidden'); $('#tele-fill').style.width = (1 - boss.tele.t / boss.tele.total) * 100 + '%'; $('#tele-text').textContent = `⚠ ${boss.tele.name}`; }
+    else te.classList.add('hidden');
+  } else bb.classList.add('hidden');
+  // skill bar
+  const slots = unlockedSlots(state);
+  for (const el of document.querySelectorAll('#skillbar .sk')) {
+    const role = el.dataset.role, id = state.skills[role], ro = SLOT_ROLES.find((x) => x.id === role);
+    const open = slots.includes(role);
+    el.classList.toggle('locked', !open);
+    el.querySelector('.ic').textContent = open ? (id ? SKILLS[id].icon : '＋') : '🔒';
+    el.querySelector('.lbl').textContent = open ? (id ? `R${state.skillRanks[id] || 1}` : ro.name) : `L${ro.lvl}`;
+    const cd = h.cds[role] || 0, full = id ? SKILLS[id].cd : 1;
+    el.querySelector('.cd').style.height = open && cd > 0 ? Math.min(100, (cd / full) * 100) + '%' : '0';
   }
-  c.heroes.forEach((h, i) => { const el = $(`#php-${i}`); if (el) el.style.width = (h.dead ? 0 : Math.max(0, 100 * h.hp / h.stats.maxLife)) + '%'; });
-  document.querySelectorAll('.cd[data-cd]').forEach((el) => {
-    const [hi, id] = el.dataset.cd.split(':');
-    const sk = SKILL_BY_ID[id], hero = state.heroes[+hi], hc = c.heroes[+hi];
-    if (!sk || !hero || !hc) return;
-    const tot = skillEffective(sk, hero.skills.ranks[id] || 1, hero.skills.mods[id]).cooldown * (1 - hc.stats.cdr / 100);
-    const left = Math.max(0, hc.cds[id] ?? tot);
-    el.style.setProperty('--p', (100 * left / tot).toFixed(1) + '%');
-  });
-  const nm = $('#m-name');
-  if (m !== lastMonster) {
-    lastMonster = m;
-    $('#m-trail').style.transition = 'none'; $('#m-trail').style.width = '100%'; void $('#m-trail').offsetWidth; $('#m-trail').style.transition = '';
-    nm.dataset.base = m.boss || m.raid ? `👑 ${m.name}` : m.elite ? 'Elite' : '';
-    $('#fm').classList.toggle('elite', !!m.elite);
-    $('#fm').classList.toggle('bossname', !!(m.boss || m.raid));
-  }
-  const enr = enrageMult(m);
-  const label = (nm.dataset.base || '') + (m.frozen > 0 ? (m.stunned ? ' 💫' : ' ❄️') : '') + (enr > 1 ? ` 🔥x${enr.toFixed(1)}` : '');
-  if (nm.textContent !== label) nm.textContent = label;
-  $('#m-hp').style.width = m.world ? '100%' : Math.max(0, 100 * m.hp / m.maxHp) + '%';
-  $('#m-trail').style.width = $('#m-hp').style.width;
-  $('#m-hp-t').textContent = m.world ? '∞' : fmt(Math.max(0, m.hp));
-  const p = c.party;
-  $('#b-dps').textContent = fmt(p.dps); $('#b-hps').textContent = fmt(p.hps); $('#b-ehp').textContent = fmt(p.tankEhp);
-  const prev = document.querySelector('[data-act="stage-prev"]'), next = document.querySelector('[data-act="stage-next"]');
-  if (prev) { prev.disabled = state.stage <= 1; next.disabled = state.stage >= state.maxStage; }
-  $('#blocked').classList.toggle('hidden', !!run || !(state.pushBlocked && state.settings.autoAdvance));
+  if (state.run?.kind === 'vault' || state.run?.kind === 'tower') { const t = document.querySelector('.zone .small'); if (t) t.textContent = runSub(state.run); const n = document.querySelector('.zone .name'); if (n) n.textContent = `${ACTIVITIES[state.run.kind].icon} ${runTitle(state.run)}`; }
 }
 
-// ---------- Heroes tab ----------
-function heroSelector() {
-  return `<div class="hero-sel">${state.heroes.map((h, i) => `
-    <div class="hs ${i === HI() ? 'on' : ''}" data-act="sel-hero" data-i="${i}">
-      ${heroImg(h.cls, 'hs-img')}
-      <div class="hs-role">${ROLES[h.role].icon} ${ROLES[h.role].name}</div>
-      <div class="hs-name">${heroName(i)}</div>
-      ${h.cls && (treePointsFree(charOf(state, i)) > 0 || ascPending(i)) ? '<i class="dot"></i>' : ''}
-    </div>`).join('')}</div>`;
-}
-function renderHeroes() {
-  const h = H();
-  if (!h.cls) {
-    view.innerHTML = heroSelector() + `<div class="panel" style="text-align:center"><p>This ${ROLES[h.role].name} has no class yet.</p>
-      <button class="btn primary" data-act="pick-role-class" data-role="${h.role}">Choose a ${ROLES[h.role].name} class</button></div>`;
-    return;
+// ---------------- Character ----------------
+function renderCharacter() {
+  const tabs = [['stats', 'Stats'], ['spec', 'Spec & Talents'], ['attrs', 'Attributes'], ['comp', 'Companions'], ['asc', 'Ascension']];
+  let body = '';
+  const s = st();
+  if (sub.character === 'stats') {
+    const cls = CLASSES[state.cls];
+    const rows = [
+      ['Power', fmt(s.power)], ['Life', fmt(s.hp)], ['Attack', fmt(s.attack)], ['Armour', fmt(s.armour)], [`${cls.dmg === 'phys' ? 'Physical' : 'Magic'} damage`, `+${Math.round(s.typePct)}%`],
+      ['Attack speed', `${s.aspd.toFixed(2)}/s`], ['Crit chance', `${s.crit.toFixed(1)}%`], ['Crit damage', `+${Math.round(s.critDmg)}%`], ['Cooldown reduction', `${s.cdr.toFixed(1)}%`],
+      ['Resistances', `${Math.round(s.resist)}%`], ['Damage reduction', `${Math.round(s.dr)}%`], ['Life steal', `${s.leech.toFixed(1)}%`], ['Boss damage', `+${Math.round(s.boss)}%`],
+      ['More damage', `x${s.more.toFixed(2)}`], ['Gold find', `+${Math.round(s.gold)}%`], ['Rarity find', `+${Math.round(s.mf)}%`], ['Experience', `+${Math.round(s.xp)}%`],
+    ];
+    const elems = Object.entries(s.elem).filter(([k, v]) => v && k !== 'nature').map(([k, v]) => `${ELEM_ICONS[k]} +${Math.round(v)}%`).join(' · ');
+    body = `<div class="panel"><div class="hero-card"><img src="assets/heroes/${cls.art}.webp" alt=""><div><h2>${cls.icon} ${cls.name}${specOf(state) ? ' · ' + specOf(state).name : ''}</h2>
+        <div class="muted">Level ${state.level}${state.level >= LEVEL_CAP ? ` · Mastery ${state.mastery}` : ''} · ${WORLD_TIERS[state.worldTier].name}${state.ascensions ? ` · Ascension ${state.ascensions}` : ''}</div>
+        <div class="muted small">Kills ${fmt(state.totals.kills)} · Bosses ${fmt(state.totals.bosses)} · Deaths ${state.totals.deaths}</div></div></div></div>
+      <div class="panel"><div class="kv">${rows.map(([k, v]) => `<div>${k}</div><b>${v}</b>`).join('')}</div>${elems ? `<div class="muted small" style="margin-top:6px">Elements: ${elems}</div>` : ''}
+        ${s.flags.size ? `<div class="small" style="margin-top:6px">${[...s.flags].filter((f) => UNIQUES[f]).map((f) => `<div class="uniq">★ ${UNIQUES[f].text}</div>`).join('')}</div>` : ''}</div>
+      <div class="panel"><h3>Milestones</h3>${UNLOCKS.map((u) => `<div class="unlock ${state.level >= u.lvl || state.ascensions ? 'done' : ''}"><b>L${u.lvl}</b> ${u.text}</div>`).join('')}</div>`;
+  } else if (sub.character === 'spec') {
+    const cls = CLASSES[state.cls];
+    const free = talentFree(state);
+    body = `<div class="panel"><h3>Specialisation ${state.level < 10 && !state.ascensions ? '<span class="muted small">(unlocks at level 10)</span>' : ''}</h3>
+      <div class="specs">${cls.specs.map((sp) => `<div class="spec ${state.spec === sp.id ? 'on' : ''}" data-act="spec" data-id="${sp.id}">
+        <b>${cls.trees.find((t) => t.id === sp.tree).icon} ${sp.name}</b><div class="small">${sp.desc}</div>
+        <div class="small good">${Object.entries(sp.t1).map(([k, v]) => statLine(k, v)).join(', ')}</div><div class="small ${state.level >= 40 || state.ascensions ? 'good' : 'muted'}">L40: ${sp.t2txt}</div></div>`).join('')}</div>
+      <div class="muted small">Respec: ${sys.respecCost(state) ? '🪙' + fmt(sys.respecCost(state)) : 'free until level 30'}</div></div>
+      <div class="panel"><h3>Talents <span class="muted small">${unlocked(state, 'talents') ? `${free} free of ${talentPointsTotal(state)}` : 'unlock at level 25'}</span></h3>
+      <div class="trees">${cls.trees.map((t) => {
+        const ranks = state.talents[t.id] || [];
+        const max = talentMax(state, t.id);
+        return `<div class="tree ${specOf(state)?.tree === t.id ? 'spec' : ''}"><div class="tt">${t.icon} ${t.name}</div>${TALENT_STATS[t.id].map((stat, i) => {
+          const r = ranks[i] || 0, open = talentRowOpen(state, t.id, i);
+          return `<div class="tal ${r ? 'on' : ''} ${open ? '' : 'lock'}" data-act="talent" data-tree="${t.id}" data-i="${i}"><span>${STAT_NAMES[stat] || stat}${stat === 'treeDmg' ? ` (${t.name})` : ''}</span><b>${r}/${max}</b><div class="small muted">${PCT_STATS.has(stat) ? '+' + TALENT_VAL[stat] + '%' : '+' + TALENT_VAL[stat]} / rank</div></div>`;
+        }).join('')}</div>`;
+      }).join('')}</div>
+      <div class="row2"><button class="btn small" data-act="autoTalents">Auto-spend</button><button class="btn small" data-act="resetTalents">Reset (${sys.respecCost(state) ? '🪙' + fmt(sys.respecCost(state)) : 'free'})</button></div>
+      <div class="muted small">Your spec's tree goes to rank 5, others to rank 3. Each pair of rows needs 3 more points in that tree.</div></div>`;
+  } else if (sub.character === 'attrs') {
+    const free = attrPointsTotal(state) - attrPointsSpent(state);
+    body = `<div class="panel"><h3>Attributes <span class="muted small">${free} unspent · ${attrPointsTotal(state)} total</span></h3>
+      ${ATTR_KEYS.map((k) => `<div class="attr"><span>${ATTRS[k].icon} <b>${ATTRS[k].name}</b> <span class="muted small">${ATTRS[k].desc}</span></span><span><b>${Math.round(s.attrs[k])}</b> <span class="muted small">(${state.attrs[k]} pts)</span> <button class="btn small" data-act="attr" data-k="${k}" ${free <= 0 ? 'disabled' : ''}>+</button></span></div>`).join('')}
+      <div class="row2"><button class="btn small" data-act="autoAttrs">Auto-allocate</button><button class="btn small" data-act="resetAttrs">Reset (free)</button></div>
+      <div class="muted small">You gain 5 points per level. New points are auto-allocated for your class; reset any time for free.</div></div>`;
+  } else if (sub.character === 'comp') {
+    const c = state.companions;
+    const ps = sys.passiveSlots(state);
+    body = `<div class="panel"><h3>Companions</h3><div class="muted small">1 active (fights and gives its full bonus) + ${ps} passive (half bonus). Passive slots unlock at levels 20 and 45.</div></div>
+      ${COMP_KEYS.map((id) => {
+        const d = COMPANIONS[id], own = c.owned[id], lvl = c.levels[id] || 1, evo = evoOf(lvl);
+        const where = c.active === id ? 'Active' : c.passive.includes(id) ? 'Passive' : '';
+        const nextEvo = EVOLUTIONS.find((e) => e.lvl > lvl);
+        const val = (d.base + d.per * (lvl - 1)) * evo.mult;
+        return `<div class="panel comp ${own ? '' : 'locked'}"><img src="assets/${d.art[0]}/${d.art[1]}.webp" class="${d.art[0] === 'monsters' ? 'flip' : ''}" alt="">
+          <div class="grow"><b>${evo.name} ${d.name}</b> ${where ? `<span class="tag">${where}</span>` : ''}<div class="small">${own ? `Lvl ${lvl} · ${d.text}: +${val.toFixed(1)}${d.stat === 'healEvery' ? '% life / 5s' : '%'}` : '🔒 ' + d.unlock}</div>
+          ${own && nextEvo ? `<div class="small muted">Evolves to ${nextEvo.name} at level ${nextEvo.lvl} (x${nextEvo.mult})</div>` : ''}
+          ${own ? `<div class="row2"><button class="btn small" data-act="compLvl" data-id="${id}">Level up ${costHtml(sys.companionCost(state, id))}</button>
+            ${c.active !== id ? `<button class="btn small" data-act="compSet" data-id="${id}" data-w="active">Make active</button>` : ''}
+            ${ps > 0 && !c.passive.includes(id) && c.active !== id ? `<button class="btn small" data-act="compSet" data-id="${id}" data-w="${c.passive[0] && ps > 1 ? 1 : 0}">Passive</button>` : ''}</div>` : ''}</div></div>`;
+      }).join('')}`;
+  } else if (sub.character === 'asc') {
+    const can = sys.canAscend(state);
+    body = `<div class="panel"><h3>Mastery</h3>${state.level >= LEVEL_CAP ? `<div>Mastery level <b>${state.mastery}</b> — each level gives +0.5% damage and +0.5% life; every 5 levels a talent point.</div>
+        <div class="bar xp" style="margin-top:6px"><div class="fill" style="width:${(state.masteryXp / masteryXp(state.mastery)) * 100}%"></div></div>` : `<div class="muted">Unlocks at level ${LEVEL_CAP}. Experience past the cap becomes Mastery.</div>`}</div>
+      <div class="panel"><h3>World Tier</h3><div class="tiers">${WORLD_TIERS.map((w, i) => `<button class="btn small ${state.worldTier === i ? 'primary' : ''}" data-act="tier" data-i="${i}" ${i > state.maxWorldTier ? 'disabled' : ''} style="color:${w.color}">${w.name}</button>`).join('')}</div>
+        <div class="muted small">Beat The Eternal One on your highest tier to unlock the next. Higher tiers: monsters x${WORLD_TIERS[Math.min(4, state.worldTier + 1)].mult}, +${WORLD_TIERS[Math.min(4, state.worldTier + 1)].ilvl} item level, more rarity. Ancient items drop from Hell.</div></div>
+      <div class="panel"><h3>Ascension ${state.ascensions ? `<span class="tag">${state.ascensions}</span>` : ''}</h3>
+        <div class="small">Reset to level 1 and stage 1-1 (you keep gear, gems, runes, companions and materials) for permanent Ascension points. Monsters get 2x stronger per Ascension.</div>
+        <div class="small muted">Needs level ${LEVEL_CAP} and The Eternal One defeated. Now worth <b>${sys.ascensionPoints(state)}</b> points (3 + 2 per world tier + tower/10 + mastery/10).</div>
+        <button class="btn ${can ? 'primary' : ''}" data-act="ascend" ${can ? '' : 'disabled'}>Ascend</button></div>
+      <div class="panel"><h3>Ascension perks <span class="muted small">${state.ascPoints} points</span></h3>${Object.entries(ASC_PERKS).map(([k, p]) => `<div class="attr"><span>${p.icon} <b>${p.name}</b> <span class="muted small">${p.text}</span></span><span><b>${state.ascPerks[k] || 0}</b> <button class="btn small" data-act="perk" data-k="${k}" ${state.ascPoints > 0 ? '' : 'disabled'}>+</button></span></div>`).join('')}</div>`;
   }
-  const free = treePointsFree(C());
-  view.innerHTML = heroSelector() + `
-    <div class="opt-row">
-      <button class="btn small primary" data-act="opt-hero">⚡ Optimise ${heroName(HI())}</button>
-      <button class="btn small primary" data-act="opt-party">⚡ Optimise party</button>
-    </div>
-    <div class="seg">
-      <button class="${heroSub === 'gear' ? 'on' : ''}" data-act="sub" data-s="gear">🛡️ Gear</button>
-      <button class="${heroSub === 'tree' ? 'on' : ''}" data-act="sub" data-s="tree">🌳 Tree${free ? ` <i>${free}</i>` : ''}</button>
-      <button class="${heroSub === 'skills' ? 'on' : ''}" data-act="sub" data-s="skills">✴️ Skills</button>
-      <button class="${heroSub === 'class' ? 'on' : ''}" data-act="sub" data-s="class">${CLASS_BY_ID[h.cls].icon} Class${ascPending(HI()) ? ' <i>!</i>' : ''}</button>
-    </div>
-    <div id="hero-body"></div>`;
-  const body = $('#hero-body');
-  ({ gear: renderGear, tree: renderTree, skills: renderSkills, class: renderClass })[heroSub](body);
+  view.innerHTML = subtabs('character', tabs) + body;
 }
+function subtabs(t, list) { return `<div class="subtabs">${list.map(([k, n]) => `<button class="${sub[t] === k ? 'on' : ''}" data-act="sub" data-t="${t}" data-k="${k}">${n}</button>`).join('')}</div>`; }
 
-function renderGear(body) {
-  const st = HS(), h = H();
-  body.innerHTML = `
-    <div class="opt-row"><button class="btn small" data-act="eq-best">🛡️ Equip best (${heroName(HI())})</button><button class="btn small" data-act="eq-best-all">🛡️ Equip best (party)</button></div>
-    <div class="slots">${SLOTS.map((s) => {
-      const it = h.gear[s.id];
-      if (!it) return `<div class="slot empty"><div class="ic">${TYPE_ICONS[s.type]}</div><div><div class="nm muted">${s.name}</div><div class="sub">Empty</div></div></div>`;
-      return `<div class="slot ${bcl(it)}" data-act="open-eq" data-slot="${s.id}">
-        <div class="ic">${icon(it)}</div>
-        <div><div class="nm ${nc(it)}">${it.name}${it.upgrade ? ` +${it.upgrade}` : ''}</div>
-        <div class="sub">${it.set ? 'Set' : it.mythic ? '✦ Mythic' : RARITIES[it.rarity].name} · ilvl ${it.ilvl}</div></div></div>`;
+// ---------------- Equipment ----------------
+function itemCard(it, opts = {}) {
+  const d = opts.delta;
+  return `<div class="item" data-act="item" data-id="${it.id}" style="border-color:${rc(it.rarity)}">
+    <div class="ii">${SLOT_INFO[it.slot].icon}${it.enhance ? `<i>+${it.enhance}</i>` : ''}</div>
+    <div class="grow"><div style="color:${rc(it.rarity)}">${it.locked ? '🔒 ' : ''}${esc(it.name)}${it.awakened ? ' ✦' : ''}</div>
+    <div class="small muted">${RARITIES[it.rarity].name} · ilvl ${it.ilvl}${it.unique ? ' · ★' : ''}${it.isNew ? ' · <b class="good">new</b>' : ''}</div></div>
+    ${d !== undefined ? `<div class="delta ${d > 0 ? 'good' : d < 0 ? 'bad' : 'muted'}">${d > 0 ? '▲' : d < 0 ? '▼' : ''}${fmt(Math.abs(d))}</div>` : ''}</div>`;
+}
+function renderEquipment() {
+  const tabs = [['gear', 'Gear'], ['bag', `Bag (${state.bag.length}/${sys.BAG_CAP})`], ['gems', 'Gems & Runes'], ['ins', 'Inscriptions'], ['craft', 'Crafting']];
+  let body = '';
+  if (sub.equipment === 'gear') {
+    body = `<div class="gear-grid">${SLOTS.map((slot) => {
+      const it = state.gear[slot];
+      return `<div class="gslot" data-act="${it ? 'item' : 'filterSlot'}" data-id="${it ? it.id : ''}" data-slot="${slot}" style="${it ? `border-color:${rc(it.rarity)}` : ''}">
+        <div class="gi">${SLOT_INFO[slot].icon}</div><div class="gn" style="color:${it ? rc(it.rarity) : ''}">${it ? esc(it.name) : SLOT_INFO[slot].name}</div>
+        ${it ? `<div class="small muted">ilvl ${it.ilvl}${it.enhance ? ` · +${it.enhance}` : ''}${it.sockets.length ? ` · ${it.sockets.map((g) => (g ? GEMS[g.slice(0, -1)].icon : '◇')).join('')}` : ''}</div>` : '<div class="small muted">empty</div>'}</div>`;
     }).join('')}</div>
-    <div class="panel" style="margin-top:10px">
-      <div class="kv">
-        <div><b>${fmt(st.role === 'healer' ? st.hps : st.dps)}</b><small>${st.role === 'healer' ? 'Healing/s' : 'DPS'}</small></div>
-        <div><b>${fmt(st.ehp)}</b><small>Eff. HP</small></div>
-        <div><b>${fmt(st.power)}</b><small>Power</small></div>
-      </div>
-      ${Object.entries(setCounts(h.gear)).map(([id, n]) => `<div class="set-sum"><b class="rset">${SETS[id].name}</b> <span class="muted">${n}/5</span>
-        ${[2, 3, 5].map((t) => `<div class="${n >= t ? 'good' : 'muted'}">(${t}) ${SETS[id].text[t]}</div>`).join('')}</div>`).join('')}
-      ${h.gear.weapon ? `<div class="${st.mastery ? 'good' : 'muted'}" style="font-size:12px;margin-top:6px">${st.mastery ? `⚔️ Weapon mastery: ${Math.round(WEAPON_MASTERY * 100)}% more damage` : `Masters: ${(CLASS_WEAPONS[h.cls] || []).join(', ')} (${Math.round(WEAPON_MASTERY * 100)}% more damage)`}</div>` : ''}
-      <p class="muted" style="font-size:12px;margin:8px 0 0">Drops go to whichever hero they help most. Tap a slot to upgrade, reroll or promote.</p>
-    </div>`;
-}
-
-function renderTree(body) {
-  const cls = CLASS_BY_ID[H().cls];
-  const free = treePointsFree(C());
-  body.innerHTML = `
-    <div class="toolbar">
-      <span>${cls.icon} <b>${cls.name}</b></span><span style="flex:1"></span>
-      <b class="${free ? 'good' : 'muted'}">${free} pts</b>
-      <button class="btn small" data-act="auto-alloc" ${free ? '' : 'disabled'}>Auto</button>
-    </div>
-    <div class="tree-wrap"><div id="tree-svg"></div>
-      <div class="tree-zoom"><button class="btn small" data-act="zin">＋</button><button class="btn small" data-act="zout">－</button><button class="btn small" data-act="zhome">⌂</button></div>
-    </div>
-    <div id="node-info" class="panel node-info"></div>
-    <div class="panel"><h2>💎 Stones <span class="muted" style="float:right">${state.stones.length}</span></h2>
-      <div class="muted" style="font-size:11px;margin-bottom:6px">Socket stones into 💠 socket nodes on the tree. A stone boosts tree skills inside its radius (double if the element matches) and gives a smaller boost to all slotted skills of its element. Stones drop from zone bosses, vault Wardens, raids and Box III.</div>
-      <div class="stone-list">${state.stones.slice().sort((a, b) => b.power - a.power).map((st) => stoneChip(st)).join('') || '<span class="muted">No stones yet.</span>'}</div>
-      <button class="btn small" style="width:100%;margin-top:6px" data-act="stones-best" ${state.stones.length ? '' : 'disabled'}>💎 Socket best stones</button></div>
-    <p class="muted" style="font-size:11px">Each hero has their own tree. Points: 1 per level up to 100, then 1 per 4 levels (${treePointsTotal(state.level)} total). Drag to move, pinch to zoom.</p>
-    <button class="btn danger" style="width:100%" data-act="tree-reset" ${H().tree.length && state.gold >= resetCost(state.level) ? '' : 'disabled'}>Reset tree · 🪙${fmt(resetCost(state.level))}</button>`;
-  drawTree();
-}
-let treeHero = null;
-function drawTree() {
-  const wrap = $('#tree-svg');
-  if (!wrap) return;
-  if (treeHero !== HI()) { resetView(); treeHero = HI(); }
-  renderTreeSvg(wrap, C(), (id) => { setSelected(id); drawTree(); }, state.stones);
-  renderNodeInfo();
-}
-function stoneOwner(uid) {
-  for (let i = 0; i < 3; i++) for (const [sock, u] of Object.entries(state.heroes[i].sockets || {})) if (u === uid) return { i, sock };
-  return null;
-}
-function stoneChip(st, act = '') {
-  const t = st.tag === 'any' ? { icon: '🌈', color: '#fff' } : TAG_INFO[st.tag];
-  const own = stoneOwner(st.uid);
-  return `<div class="stone" style="--sc:${t.color}" ${act}><b>💎 ${st.name}</b><small>T${st.tier} · +${st.power}% ${t.icon}${own ? ` · ${heroName(own.i)}` : ''}</small></div>`;
-}
-function renderNodeInfo() {
-  const el = $('#node-info');
-  if (!el) return;
-  const id = getSelected();
-  if (!id) { el.innerHTML = '<div class="muted" style="font-size:12px">Tap a node to see it. Gold nodes are notables; the big ones at the edge are <b>keystones</b> that change the rules.</div>'; return; }
-  const ch = C();
-  const n = NODES[id];
-  const set = allocatedSet(ch);
-  const own = id === `start_${ch.cls}`;
-  const title = n.name || (n.kind === 'small' ? 'Passive' : '');
-  const kindLabel = { small: 'Passive', notable: 'Notable', keystone: 'Keystone', start: own ? 'Your class' : 'Class start' }[n.kind];
-  const has = set.has(id);
-  const path = has ? [] : pathTo(ch, id);
-  const free = treePointsFree(ch);
-  let btns = '';
-  if (!has && path.length) {
-    btns = `<button class="btn primary" data-act="alloc-path" ${path.length <= free ? '' : 'disabled'}>${path.length === 1 ? 'Allocate' : `Allocate path (${path.length} pts)`}</button>`;
-  } else if (has && !own) {
-    const c = refundCost(state.level);
-    btns = canRefund(ch, id)
-      ? `<button class="btn danger" data-act="refund" ${state.gold >= c ? '' : 'disabled'}>Refund · 🪙${fmt(c)}</button>`
-      : '<span class="muted" style="font-size:11px">Refund the nodes beyond this first.</span>';
-  }
-  let extra = '';
-  if (n.kind === 'skill') {
-    const sk = SKILL_BY_ID[n.skill];
-    extra = `<div class="ni-line"><b>${sk.icon} ${sk.name}</b>: ${skillDescFull(sk, H().skills.ranks[sk.id] || 1, H().skills.mods[sk.id])}</div>
-      ${synergyLines(sk).map((l) => `<div class="ni-syn">${l}</div>`).join('')}`;
-  }
-  if (n.kind === 'socket') {
-    const uid = (H().sockets || {})[id];
-    const stone = uid && state.stones.find((x) => x.uid === uid);
-    const near = socketsInReach(id).map((nid) => SKILL_BY_ID[NODES[nid].skill]);
-    extra = `<div class="ni-line">In radius: ${near.map((sk) => `${sk.icon} ${sk.name}`).join(', ') || 'no tree skills'}</div>
-      ${stone ? stoneChip(stone) : '<div class="muted" style="font-size:12px">Empty socket</div>'}
-      ${has ? `<div class="ni-btns"><button class="btn small" data-act="socket-pick">${stone ? 'Change stone' : 'Socket a stone'}</button>${stone ? '<button class="btn small danger" data-act="socket-clear">Remove</button>' : ''}</div>` : ''}`;
-  }
-  const kl = { skill: 'Tree skill', socket: 'Stone socket' }[n.kind] || kindLabel;
-  const tl = n.kind === 'skill' ? SKILL_BY_ID[n.skill].name : n.kind === 'socket' ? 'Stone Socket' : title;
-  el.innerHTML = `<div class="ni-head"><span class="ni-k ${n.kind}">${kl}</span><b>${n.icon ? n.icon + ' ' : ''}${tl}</b>${has ? ' <span class="good">✓</span>' : ''}</div>
-    ${n.kind === 'skill' || n.kind === 'socket' ? '' : nodeLines(n, own).map((l) => `<div class="ni-line">${l}</div>`).join('')}
-    ${extra}
-    <div class="ni-btns">${btns}</div>`;
-}
-
-function renderSkills(body) {
-  const h = H();
-  const slots = SKILL_SLOTS;
-  const bar = Array.from({ length: slots }, (_, i) => h.skills.bar[i]);
-  const avail = new Set(availableSkills(state, HI()).map((x) => x.id));
-  const boosts = stoneBoosts(state, HI());
-  let list = [...skillsFor(h.cls).filter((sk) => !sk.tree), ...TREE_SKILLS[h.cls].map((id) => SKILL_BY_ID[id]), ...SKILLS.filter((sk) => sk.tree && avail.has(sk.id) && !TREE_SKILLS[h.cls].includes(sk.id))];
-  if (skillTag !== 'all') list = list.filter((sk) => skillTag === 'aura' ? sk.kind === 'aura' : skillTag === 'heal' ? ['heal', 'shield'].includes(sk.kind) : (sk.tags || []).includes(skillTag));
-  list.sort((x, y) => (avail.has(y.id) ? 1 : 0) - (avail.has(x.id) ? 1 : 0) || (x.unlock || 999) - (y.unlock || 999));
-  const tags = ['all', ...Object.keys(TAG_INFO), 'aura', 'heal'];
-  body.innerHTML = `
-    <div class="opt-row"><button class="btn small" data-act="skills-best">✴️ Best skills</button><button class="btn small" data-act="skills-best-all">✴️ Best skills (party)</button></div>
-    <div class="skillbar grid8">${bar.map((id, i) => `<div class="sk ${skillPick === i ? 'picking' : ''}" data-act="pick-slot" data-i="${i}">${id && SKILL_BY_ID[id] ? `<span>${SKILL_BY_ID[id].icon}</span><small>${h.skills.ranks[id]}</small>` : '+'}</div>`).join('')}</div>
-    ${skillPick != null ? `<div class="pick-hint">Choose a skill for slot ${skillPick + 1} <button class="btn small" data-act="pick-cancel">Cancel</button> ${h.skills.bar[skillPick] ? '<button class="btn small" data-act="slot-clear">Empty slot</button>' : ''}</div>` : ''}
-    <div class="toolbar tagbar">${tags.map((t) => `<span class="chip ${skillTag === t ? 'on' : ''}" data-act="skill-tag" data-t="${t}">${t === 'all' ? 'All' : t === 'aura' ? '🔆 Aura' : t === 'heal' ? '💚 Support' : TAG_INFO[t].icon}</span>`).join('')}</div>
-    <p class="muted" style="font-size:11px;margin-top:0">Statuses are shared: one hero can Burn, Chill, Shock or Weaken and the whole party profits. Look for skills that apply a status and skills that hit harder against it.</p>
-    ${list.map((sk) => {
-      const rank = h.skills.ranks[sk.id];
-      const ok = avail.has(sk.id) && rank;
-      const tag = sk.cls ? '<span class="cls-tag">CLASS</span> ' : sk.tree ? '<span class="cls-tag tree">TREE</span> ' : sk.kind === 'aura' ? '<span class="cls-tag aura">AURA</span> ' : '';
-      const tagIcons = (sk.tags || []).map((t) => TAG_INFO[t].icon).join('');
-      if (!ok) return `<div class="node locked"><div class="ic">${sk.icon}</div><div class="info"><b>${tag}${sk.name} <span class="tagicons">${tagIcons}</span></b><div>${sk.tree ? 'Allocate its node on the passive tree' : `Unlocks at level ${sk.unlock}`}</div>${synergyLines(sk).map((l) => `<div class="syn">${l}</div>`).join('')}</div></div>`;
-      const c = skillUpgradeCost(rank, state.level);
-      const inBar = h.skills.bar.includes(sk.id);
-      const picks = h.skills.mods[sk.id] || [];
-      const pending = MILESTONES.some((m, i) => rank >= m && picks[i] == null);
-      const pips = MILESTONES.map((m, i) => `<span class="pip ${picks[i] != null && rank >= m ? 'on' : rank >= m ? 'ready' : ''}"></span>`).join('');
-      const boost = boosts[sk.id] ? ` <span class="good">💎+${Math.round((boosts[sk.id] - 1) * 100)}%</span>` : '';
-      return `<div class="node ${inBar ? 'inbar' : ''}" data-act="${skillPick != null ? 'assign' : 'skill-open'}" data-id="${sk.id}">
-        <div class="ic">${sk.icon}</div>
-        <div class="info"><b>${tag}${sk.name} <span class="muted">R${rank}</span> <span class="tagicons">${tagIcons}</span>${inBar ? ' <span class="good">●</span>' : ''} <span class="pips">${pips}</span>${pending ? ' <span class="newmod">NEW</span>' : ''}${boost}</b>
-          <div>${skillDescFull(sk, rank, picks)}</div>${synergyLines(sk).map((l) => `<div class="syn">${l}</div>`).join('')}</div>
-        ${skillPick == null ? `<button class="btn small primary" data-act="skill-up" data-id="${sk.id}" ${rank < MAX_SKILL_RANK && costOk(c) ? '' : 'disabled'}>⬆️<small style="display:block;font-size:9px">${rank < MAX_SKILL_RANK ? `💠${fmt(c.shards)}` : 'MAX'}</small></button>` : ''}
-      </div>`;
-    }).join('')}`;
-}
-
-function openSkill(id) {
-  const h = H();
-  const sk = SKILL_BY_ID[id], rank = h.skills.ranks[id];
-  const picks = h.skills.mods[id] || [];
-  const c = skillUpgradeCost(rank, state.level);
-  const mods = skillMods(sk);
-  $('#modal-card').innerHTML = `
-    <div class="item-head"><div class="nm">${sk.icon} ${sk.name}</div><div class="meta">${heroName(HI())} · Rank ${rank}/${MAX_SKILL_RANK} · each rank +10% effect, −2% cooldown</div></div>
-    <div class="lines"><div class="imp">${skillDescFull(sk, rank, picks)}</div>${synergyLines(sk).map((l) => `<div class="syn" style="text-align:center">${l}</div>`).join('')}</div>
-    <button class="btn primary" style="width:100%" data-act="skill-up" data-id="${id}" ${rank < MAX_SKILL_RANK && costOk(c) ? '' : 'disabled'}>
-      ⬆️ Rank up${rank < MAX_SKILL_RANK ? ` · ${costText(c)}` : ' (max)'}</button>
-    <h2 style="margin-top:14px">Upgrades</h2>
-    ${MILESTONES.map((m, i) => `<div class="ms ${rank >= m ? '' : 'locked'}"><div class="ms-h">Rank ${m}${rank >= m ? '' : ' 🔒'}</div>
-      <div class="ms-opts">${mods[i].map((o, j) => {
-        const chosen = picks[i] === j;
-        return `<div class="ms-opt ${chosen ? 'on' : ''}" ${rank >= m && !chosen ? `data-act="mod-pick" data-id="${id}" data-i="${i}" data-o="${j}"` : ''}><b>${o.name}</b><small>${o.desc}</small></div>`;
-      }).join('')}</div></div>`).join('')}
-    <p class="muted" style="font-size:11px">Your first choice at each rank is free. Changing it later costs 💠${respecModCost(rank).shards}.</p>
-    <button class="btn full" style="width:100%" data-act="close">Close</button>`;
-  modalCtx = { skill: id };
-  $('#modal').classList.remove('hidden');
-}
-
-function ascPending(i = HI()) {
-  const h = state.heroes[i];
-  return !!h.cls && ASC_LEVELS.some((lv, k) => state.level >= lv && (h.asc || [])[k] == null);
-}
-function renderClass(body) {
-  const h = H();
-  const cls = CLASS_BY_ID[h.cls];
-  const asc = ASCENDANCY[h.cls];
-  const set = SETS[h.cls];
-  const n = setCounts(h.gear)[h.cls] || 0;
-  const classSkills = SKILLS.filter((s) => s.cls === h.cls);
-  body.innerHTML = `
-    <div class="panel class-hero" style="--c:${cls.color}">${heroImg(h.cls, 'ch-img')}
-      <div><b>${cls.name}</b><div class="muted">${ROLES[cls.role].icon} ${ROLES[cls.role].name} · ${cls.desc}</div>
-      <div class="muted" style="font-size:11px;margin-top:4px">${ROLES[cls.role].desc}</div>
-      <button class="btn small" style="margin-top:6px" data-act="change-class" ${state.gold >= resetCost(state.level) * 2 && !state.run ? '' : 'disabled'}>Change class · 🪙${fmt(resetCost(state.level) * 2)}</button></div></div>
-    <div class="panel"><h2>Class Passives</h2>
-      <div class="opt-row"><button class="btn small" data-act="asc-best" ${ascPending(HI()) ? '' : 'disabled'}>⚜️ Pick best for open choices</button></div>
-      <p class="muted" style="font-size:12px;margin-top:0">At levels ${ASC_LEVELS.join(', ')} choose one of two passives. First pick is free; changing costs 🪙${fmt(ascRespecCost(state.level))}.</p>
-      ${asc.map((opts, i) => `<div class="ms ${state.level >= ASC_LEVELS[i] ? '' : 'locked'}"><div class="ms-h">Level ${ASC_LEVELS[i]}${state.level >= ASC_LEVELS[i] ? '' : ' 🔒'}</div>
-        <div class="ms-opts">${opts.map((o, j) => {
-          const on = h.asc[i] === j;
-          return `<div class="ms-opt ${on ? 'on' : ''}" ${state.level >= ASC_LEVELS[i] && !on ? `data-act="asc-pick" data-i="${i}" data-o="${j}"` : ''}><b>${o.name}</b><small>${o.desc}</small></div>`;
-        }).join('')}</div></div>`).join('')}
-    </div>
-    <div class="panel"><h2>Weapon Mastery</h2>
-      <div style="font-size:13px">${CLASS_WEAPONS[h.cls].map((k) => `${WICONS[k]} ${k}`).join(' · ')}</div>
-      <div class="muted" style="font-size:12px">${Math.round(WEAPON_MASTERY * 100)}% more damage while wielding one. ${h.gear.weapon ? (isClassWeapon(h, h.gear.weapon) ? '<span class="good">Active</span>' : '<span class="bad">Not active</span>') : ''}</div></div>
-    <div class="panel"><h2>Class Set</h2>
-      <div><b class="rset">${set.name}</b> <span class="muted">${n}/5 equipped</span></div>
-      <div class="muted" style="font-size:12px;margin:4px 0">${SET_SLOTS.map((t) => `${TYPE_ICONS[t]} ${set.prefix} ${t}`).join(' · ')}</div>
-      ${[2, 3, 5].map((t) => `<div class="${n >= t ? 'good' : 'muted'}" style="font-size:13px">(${t}) ${set.text[t]}</div>`).join('')}
-      <div class="muted" style="font-size:11px;margin-top:6px">Set pieces drop from zone bosses (stage 20+), dungeon Wardens, raids and Box II/III.</div></div>
-    <div class="panel"><h2>Class Skills</h2>
-      ${classSkills.map((sk) => `<div class="row"><span>${sk.icon} <b>${sk.name}</b> <span class="muted">Lv ${sk.unlock}</span></span>
-        <span class="${h.skills.ranks[sk.id] ? 'good' : 'muted'}">${h.skills.ranks[sk.id] ? 'Unlocked' : 'Locked'}</span></div>`).join('')}</div>`;
-}
-
-// ---------- Bag ----------
-function renderBag() {
-  let items = state.bag;
-  const types = ['weapon', 'offhand', 'helm', 'chest', 'gloves', 'boots', 'belt', 'amulet', 'ring'];
-  if (bagFilter >= 0) items = items.filter((i) => i.type === types[bagFilter]);
-  const icons = ['🗡️', '🛡️', '⛑️', '🥋', '🧤', '🥾', '🎗️', '📿', '💍'];
-  view.innerHTML = `
-    <div class="toolbar">
-      <b>${state.bag.length}/${BAG_SIZE}</b>
-      <span style="flex:1"></span>
-      <button class="btn small" data-act="sort">Sort</button>
-      <button class="btn small danger" data-act="salvage-menu">Salvage…</button>
-    </div>
-    <div class="toolbar">
-      <span class="chip ${bagFilter < 0 ? 'on' : ''}" data-act="filter" data-f="-1">All</span>
-      ${icons.map((t, i) => `<span class="chip ${bagFilter === i ? 'on' : ''}" data-act="filter" data-f="${i}">${t}</span>`).join('')}
-    </div>
-    <div class="grid">${items.map((it) => {
-      const b = partyReady(state) ? bestHeroFor(state, it) : { hero: -1 };
-      return `<div class="cell ${bcl(it)}" data-act="open-bag" data-uid="${it.uid}">
-        ${icon(it)}
-        ${it.upgrade ? `<span class="up">+${it.upgrade}</span>` : ''}
-        ${it.locked ? '<span class="lk">🔒</span>' : it.isNew ? '<span class="new"></span>' : ''}
-        ${b.hero >= 0 ? `<span class="arrow">▲${ROLES[roleOf(b.hero)].icon}</span>` : ''}
-        <span class="il">${it.ilvl}</span></div>`;
-    }).join('') || '<p class="muted" style="grid-column:span 5">Your bag is empty.</p>'}</div>`;
-  state.bag.forEach((b) => { b.isNew = false; });
-}
-
-// ---------- Item modal ----------
-function openItem(item, where, heroIdx, slot) {
-  const r = RARITIES[item.rarity];
-  const imp = describeImplicit(item);
-  const affs = item.affixes.map((a) => describeAffix(a, item));
-  affs.sort((a, b) => (a.type === b.type ? 0 : a.type === 'prefix' ? -1 : 1));
-  let cmp = '';
-  if (where === 'bag' && partyReady(state)) {
-    cmp = `<div class="equip-on">${state.heroes.map((h, i) => {
-      const ch = charOf(state, i);
-      const ts = targetSlot(ch, item);
-      const cur = HS(i).power;
-      const nxt = computeStats(ch, { ...h.gear, [ts]: item }).power;
-      const v = (nxt / cur - 1) * 100;
-      return `<button class="btn eq-btn" data-act="equip" data-uid="${item.uid}" data-i="${i}">${heroImg(h.cls, 'eq-img')}
-        <span>${ROLES[h.role].icon} ${heroName(i)}<small class="${v >= 0 ? 'good' : 'bad'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}% power</small></span></button>`;
-    }).join('')}</div>`;
-  }
-  const up = upgradeCost(item), rr = rerollCost(item), pr = promoteCost(item), sv = salvageValue(item);
-  const owner = where === 'eq' ? state.heroes[heroIdx] : H();
-  const setN = item.set ? (setCounts(owner.gear)[item.set] || 0) : 0;
-  $('#modal-card').innerHTML = `
-    <div class="item-head ${bcl(item)}">
-      <div class="nm ${nc(item)}">${icon(item)} ${item.name}${item.upgrade ? ` +${item.upgrade}` : ''}</div>
-      <div class="meta">${item.set ? 'Set' : item.mythic ? '✦ Mythic' : r.name} ${item.baseName ? item.baseName + ' · ' : ''}${item.kind || SLOTS.find((s) => s.type === item.type).name} · Item Level ${item.ilvl} · Upgrade ${item.upgrade}/${r.maxUpgrade}</div>
-      ${where === 'eq' ? `<div class="meta">Worn by ${ROLES[owner.role].icon} ${heroName(heroIdx)}</div>` : ''}
-    </div>
-    <div class="lines">
-      ${imp.map((l) => `<div class="imp">${l}</div>`).join('')}
-      ${affs.length ? '<hr>' : ''}
-      ${affs.map((a) => `<div class="aff"><span>${a.text}</span><span class="t ${a.tier === 'T1' ? 'top' : ''}">${a.type === 'prefix' ? 'P' : 'S'} ${a.tier}</span></div>`).join('')}
-      ${item.mythic ? `<hr><div class="mythic-pow"><div class="mp-h">✦ Mythic Power</div>${MYTHIC_BY_ID[item.mythic].text.map((t) => `<div>${t}</div>`).join('')}</div>` : ''}
-      ${item.set ? `<hr><div class="set-box"><b class="rset">${SETS[item.set].name}</b> <span class="muted">(${SETS[item.set].prefix} · ${CLASS_BY_ID[item.set].name} set)</span>
-        ${[2, 3, 5].map((t) => `<div class="${setN >= t ? 'good' : 'muted'}">(${t}) ${SETS[item.set].text[t]}</div>`).join('')}</div>` : ''}
-      ${item.type === 'weapon' ? `<hr><div style="text-align:center;font-size:12px" class="muted">${item.kind}: mastered by ${CLASSES.filter((c) => CLASS_WEAPONS[c.id].includes(item.kind)).map((c) => c.name).join(', ')}</div>` : ''}
-    </div>
-    ${cmp}
-    <div class="actions">
-      <button class="btn" data-act="upgrade" ${canUpgrade(item) && costOk(up) ? '' : 'disabled'}>⬆️ Upgrade<small>${canUpgrade(item) ? costText(up) : 'Max level'}</small></button>
-      <button class="btn" data-act="reroll" ${item.rarity > 0 && costOk(rr) ? '' : 'disabled'}>🎲 Reroll mods<small>${item.rarity > 0 ? costText(rr) : 'Needs Magic+'}</small></button>
-      <button class="btn" data-act="promote" ${canPromote(item) && costOk(pr) ? '' : 'disabled'}>✨ Promote<small>${canPromote(item) ? `→ ${RARITIES[item.rarity + 1].name} · ${costText(pr)}` : 'Max rarity'}</small></button>
-      ${where === 'bag'
-        ? `<button class="btn" data-act="lock">${item.locked ? '🔓 Unlock' : '🔒 Lock'}<small>Protect from salvage</small></button>
-           <button class="btn danger full" data-act="salvage-one" ${item.locked ? 'disabled' : ''}>♻️ Salvage <small>+💠${sv.shards} +🪙${fmt(sv.gold)}</small></button>`
-        : `<button class="btn" data-act="unequip">Unequip<small>Move to bag</small></button>`}
-      <button class="btn full" data-act="close">Close</button>
-    </div>`;
-  modalCtx = { item, where, hero: heroIdx, slot };
-  $('#modal').classList.remove('hidden');
-}
-function closeModal() {
-  if (modalCtx && modalCtx.picker && !modalCtx.cancellable) return;
-  $('#modal').classList.add('hidden'); modalCtx = null;
-}
-function reopen() { if (modalCtx && modalCtx.item) openItem(modalCtx.item, modalCtx.where, modalCtx.hero, modalCtx.slot); }
-
-function openStonePicker(sock) {
-  $('#modal-card').innerHTML = `<h2>💎 Choose a stone</h2>
-    <p class="muted" style="font-size:12px;margin-top:0">A stone already in another socket will move here.</p>
-    <div class="stone-list">${state.stones.slice().sort((a, b) => b.power - a.power).map((st) => stoneChip(st, `data-act="socket-set" data-uid="${st.uid}"`)).join('') || '<span class="muted">No stones yet.</span>'}</div>
-    <button class="btn full" style="width:100%;margin-top:10px" data-act="close">Cancel</button>`;
-  modalCtx = { sock };
-  $('#modal').classList.remove('hidden');
-}
-function openSalvageMenu() {
-  const counts = RARITIES.map((r) => state.bag.filter((b) => !b.locked && !b.set && !b.mythic && b.rarity === r.id).length);
-  $('#modal-card').innerHTML = `<h2>Salvage</h2><p class="muted" style="font-size:12px">Turns unlocked items into 💠 shards and gold. Locked items, set pieces and Mythics are kept.</p>
-    <div class="actions">${RARITIES.slice(0, 5).map((r, i) =>
-      `<button class="btn" data-act="salvage-upto" data-r="${i}">All ≤ <span class="${rc(i)}">${r.name}</span><small>${counts.slice(0, i + 1).reduce((a, b) => a + b, 0)} items</small></button>`).join('')}
-      <button class="btn full" data-act="close">Cancel</button></div>`;
-  modalCtx = null;
-  $('#modal').classList.remove('hidden');
-}
-
-// ---------- Pets ----------
-function renderPets() {
-  const act = state.pets.active;
-  const owned = state.pets.owned;
-  const ap = PET_BY_ID[act];
-  const lvl = owned[act] || 1;
-  const c = petUpgradeCost(lvl);
-  view.innerHTML = `
-    ${ap ? `<div class="panel pet-hero">${petImg(act, 'pet-big')}
-      <div class="pet-info"><b>${ap.name}</b> <span class="muted">Lv ${lvl}/${PET_MAX_LEVEL}</span>
-        <div class="muted" style="font-size:12px">${ap.desc}</div>
-        <div class="good" style="font-size:12px">${bonusText(ap.bonus(lvl))}</div>
-        <div class="muted" style="font-size:11px">Also attacks every 2s for ${Math.round((0.35 + lvl * 0.025) * 100)}% of the party's average hit.</div>
-        <button class="btn small primary" style="margin-top:6px" data-act="pet-up" ${lvl < PET_MAX_LEVEL && costOk(c) ? '' : 'disabled'}>⬆️ Level up · ${costText(c)}</button>
-      </div></div>` : ''}
-    <div class="opt-row"><button class="btn small primary" data-act="pet-best">🐾 Use best pet</button></div>
-    <div class="panel egg-row"><span>🥚 Pet Eggs: <b>${state.eggs}</b></span>
-      <button class="btn small primary" data-act="hatch" ${state.eggs ? '' : 'disabled'}>Hatch</button></div>
-    <p class="muted" style="font-size:12px">Eggs drop from first zone-boss kills, dungeons, raids and boxes, or buy them with 🏅 emblems. A duplicate pet levels up the one you have.</p>
-    <div class="pet-grid">${PETS.map((p) => {
-      const l = owned[p.id];
-      return `<div class="pet-card ${l ? '' : 'unowned'} ${act === p.id ? 'on' : ''}" ${l ? `data-act="pet-set" data-id="${p.id}"` : ''}>
-        ${petImg(p.id)}<b>${p.name}</b><small>${l ? `Lv ${l}` : 'Not found'}</small>
-        ${act === p.id ? '<span class="pet-tag">Active</span>' : ''}</div>`;
-    }).join('')}</div>`;
-}
-
-// ---------- Events: world boss, boxes, shop, dungeons, raids ----------
-function ownedMythics() {
-  const out = new Set();
-  for (const h of state.heroes) for (const it of Object.values(h.gear)) if (it && it.mythic) out.add(it.mythic);
-  for (const it of state.bag) if (it.mythic) out.add(it.mythic);
-  return out;
-}
-function lootLine(kind, t) {
-  const lt = lootTable(kind, t);
-  const own = ownedMythics();
-  return `<div class="loot-line" data-act="loot-info" data-k="${kind}" data-t="${t}">${lt.mythics.map((id) => `<span class="r5">✦ ${MYTHIC_BY_ID[id].name}${own.has(id) ? ' ✓' : ''}</span>`).join(' ')}
-    ${lt.sets.map((c) => `<span class="rset">${CLASS_BY_ID[c].name} set</span>`).join(' ')} <span class="muted">ⓘ</span></div>`;
-}
-function ratingBadge(kind, t) {
-  const p = predict(state, kind, t, false);
-  if (!p) { schedulePredictions(); return `<span class="rating r-wait" id="rate-${kind}-${t}">…</span>`; }
-  const r = RATINGS[p.rating];
-  return `<span class="rating ${r.cls}" id="rate-${kind}-${t}">${r.icon} ${r.label}</span>`;
-}
-let predTimer = null;
-function schedulePredictions() {
-  if (predTimer) return;
-  predTimer = setTimeout(function step() {
-    predTimer = null;
-    const el = document.querySelector('.rating.r-wait');
-    if (!el || tab !== 'events') return;
-    const [, kind, t] = el.id.split('-');
-    const p = predict(state, kind, +t, true);
-    if (p) { const r = RATINGS[p.rating]; el.className = `rating ${r.cls}`; el.textContent = `${r.icon} ${r.label}`; }
-    else { el.className = 'rating'; el.textContent = ''; }
-    if (document.querySelector('.rating.r-wait')) predTimer = setTimeout(step, 30);
-  }, 60);
-}
-function openLootInfo(kind, t) {
-  const lt = lootTable(kind, t);
-  const own = ownedMythics();
-  $('#modal-card').innerHTML = `<h2>${kind === 'raid' ? '🔱 ' + raidName(t) : '🗝️ ' + dungeonName(t)}</h2>
-    <p class="muted" style="font-size:12px;margin-top:0">Unique loot for this ${kind === 'raid' ? 'raid' : 'vault'} (Tier ${t}). Mythic chance per clear: ${Math.round(lt.mythicChance * 100)}%.</p>
-    ${lt.mythics.map((id) => { const m = MYTHIC_BY_ID[id]; return `<div class="panel"><b class="r5">✦ ${m.name}</b> <span class="muted">${SLOTS.find((x) => x.type === m.type).name}</span>${own.has(id) ? ' <span class="good">✓ owned</span>' : ''}
-      ${m.text.map((x) => `<div class="mythic-pow" style="text-align:left">${x}</div>`).join('')}</div>`; }).join('')}
-    ${lt.sets.map((c) => `<div class="panel"><b class="rset">${SETS[c].name}</b> <span class="muted">(${CLASS_BY_ID[c].name})</span>
-      ${[2, 3, 5].map((n) => `<div class="muted" style="font-size:12px">(${n}) ${SETS[c].text[n]}</div>`).join('')}</div>`).join('')}
-    <button class="btn full" style="width:100%" data-act="close">Close</button>`;
-  modalCtx = null;
-  $('#modal').classList.remove('hidden');
-}
-function renderEvents() {
-  const inv = invasionStatus(state);
-  const wb = worldBossToday();
-  const tiers = dungeonTiers(state);
-  const run = state.run;
-  const rows = [];
-  for (let t = tiers; t >= 1; t--) {
-    const dc = state.dungeonsCleared[t] || 0, rcl = state.raidsCleared[t] || 0;
-    const ru = raidUnlocked(state, t);
-    rows.push(`<div class="eg-row">
-      <div class="info"><b>${dungeonName(t)}</b> ${ratingBadge('dungeon', t)}<div class="muted">Tier ${t} · Lv ${dungeonLevel(t)} · cleared ${dc}×</div>${lootLine('dungeon', t)}</div>
-      <button class="btn small primary" data-act="enter" data-k="dungeon" data-t="${t}" ${!run && state.keys > 0 ? '' : 'disabled'}>Enter 🗝️</button></div>
-      <div class="eg-row raid ${ru ? '' : 'locked'}">
-      <div class="info"><b>🔱 ${raidName(t)}</b> ${ru ? ratingBadge('raid', t) : ''}<div class="muted">${ru ? `Raid · Lv ${raidLevel(t)} · cleared ${rcl}×` : 'Clear this tier\'s vault to unlock'}</div>${lootLine('raid', t)}</div>
-      <button class="btn small raidbtn" data-act="enter" data-k="raid" data-t="${t}" ${!run && state.sigils > 0 && ru ? '' : 'disabled'}>Raid 🔱</button></div>`);
-  }
-  const canFight = !run && partyReady(state) && ((inv.open && !inv.used) || state.horns > 0);
-  view.innerHTML = `
-    <div class="panel wb-card">
-      <img class="wb-img" src="assets/${wb.art === 'dragon' ? 'bosses/dragon' : 'monsters/demonlord'}.webp" alt="">
-      <div class="wb-info"><div class="wb-t">⚔️ World Boss Invasion</div>
-        <b>${wb.name}</b>
-        <div class="muted" style="font-size:12px">${inv.open ? (inv.used ? `You've fought this invasion. Ends in ${fmtTime(inv.secondsLeft)}.` : `<span class="good">Invading now!</span> Ends in ${fmtTime(inv.secondsLeft)}.`) : `Next: ${inv.window.name} in ${fmtTime(inv.secondsUntil)} (${inv.window.start}:00–${inv.window.end}:00)`}</div>
-        <div class="muted" style="font-size:11px">${INVASION_TIME}s to deal as much damage as you can. Rewards: 🏅 emblems and boxes by rank (D → S).${state.invasion.best ? ` Best: ${fmt(state.invasion.best)}` : ''}</div>
-        <button class="btn small primary" style="margin-top:6px" data-act="enter" data-k="invasion" ${canFight ? '' : 'disabled'}>${inv.open && !inv.used ? 'Fight!' : `Use 📯 Horn (${state.horns})`}</button>
-      </div></div>
-    <div class="panel"><h2>Boxes</h2>
-      <div class="box-row">${[1, 2, 3].map((t) => `<div class="box"><div class="bi">${BOX_INFO[t].icon}</div><b>${BOX_INFO[t].name} ×${state.boxes[t] || 0}</b>
-        <small>${BOX_INFO[t].desc}</small><button class="btn small" data-act="open-box" data-t="${t}" ${state.boxes[t] ? '' : 'disabled'}>Open</button></div>`).join('')}</div></div>
-    <div class="panel"><h2>Emblem Shop <span class="muted" style="float:right">🏅 ${state.emblems}</span></h2>
-      ${SHOP.map((s) => `<div class="row"><span>${s.icon} <b>${s.name}</b><br><small class="muted">${s.desc}</small></span>
-        <button class="btn small" data-act="buy" data-id="${s.id}" ${state.emblems >= s.cost ? '' : 'disabled'}>🏅${s.cost}</button></div>`).join('')}</div>
-    <div class="kv panel"><div><b>🗝️ ${state.keys}</b><small>Keys</small></div><div><b>🔱 ${state.sigils}</b><small>Sigils</small></div><div><b>📯 ${state.horns}</b><small>Horns</small></div></div>
-    ${run ? `<div class="blocked-note"><span>Your party is in a fight…</span><button class="btn small" data-act="tab-battle">Watch</button></div>` : ''}
-    <div class="panel"><h2>Vaults & Raids</h2><div class="muted" style="font-size:12px;line-height:1.5">
-      <b>Zone bosses</b> enrage after 30s and slam the whole party. They drop 🗝️ keys (always the first time).<br>
-      <b>Vaults</b>: 5 rooms then a Warden in ${DUNGEON.timeLimit}s. Rare+ loot, set pieces, and a 🔱 sigil (guaranteed first clear).<br>
-      <b>Raids</b>: a 3-phase boss in 180s. Legendary, Epic+ and set loot, a chance at Mythic, plus a 📯 horn.</div></div>
-    ${tiers ? rows.join('') : '<p class="muted">Beat the zone boss at stage 10 to unlock your first vault.</p>'}`;
-}
-
-// ---------- Class picker (per role) ----------
-function openClassPicker(role, cancellable, heroIdx) {
-  const list = CLASSES.filter((c) => c.role === role);
-  $('#modal-card').innerHTML = `<h2>Choose your ${ROLES[role].icon} ${ROLES[role].name}</h2>
-    <p class="muted" style="font-size:12px;margin-top:0">${ROLES[role].desc} Each class has its own skills, weapons, armour set, passives and starting point on the tree.</p>
-    <div class="class-grid">${list.map((c) => `<div class="class-card" data-act="pick-class" data-id="${c.id}" data-i="${heroIdx}" style="--c:${c.color}">
-      ${heroImg(c.id, 'cc-img')}<b>${c.name}</b><small>${c.attr} · ${(CLASS_WEAPONS[c.id] || []).join('/')}</small>
-      <div class="cd">${c.desc}</div></div>`).join('')}</div>
-    ${cancellable ? '<button class="btn full" data-act="close" style="width:100%;margin-top:10px">Cancel</button>' : ''}`;
-  modalCtx = { picker: true, cancellable };
-  $('#modal').classList.remove('hidden');
-}
-function ensureParty() {
-  const i = state.heroes.findIndex((h) => !h.cls);
-  if (i >= 0) { openClassPicker(state.heroes[i].role, false, i); return false; }
-  return true;
-}
-
-// ---------- More: stats & settings ----------
-function renderMore() {
-  const s = state.settings;
-  const st = HS();
-  const row = (k, v) => `<span>${k}</span><b>${v}</b>`;
-  view.innerHTML = `
-    <div class="panel"><h2>Settings</h2>
-      <div class="row"><span>Auto-equip upgrades</span><button class="btn small toggle ${s.autoEquip ? 'on' : ''}" data-act="set-autoequip">${s.autoEquip ? 'ON' : 'OFF'}</button></div>
-      <div class="row"><span>Auto-optimise on level-up<br><small class="muted">Does everything Optimise does, including spending gold & shards</small></span><button class="btn small toggle ${s.autoOptimise ? 'on' : ''}" data-act="set-autoopt">${s.autoOptimise ? 'ON' : 'OFF'}</button></div>
-      <div class="row"><span>Auto-salvage drops up to</span>
-        <select id="sel-salvage">${['Off', ...RARITIES.slice(0, 4).map((r) => r.name)].map((n, i) => `<option value="${i}" ${s.autoSalvage === i ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
-    </div>
-    ${heroSelector()}
-    <div class="panel"><h2>${heroName(HI())} stats</h2>
-      ${[...st.keystones].map((k) => `<span class="ks-chip">${KEYSTONES[k].icon} ${KEYSTONES[k].name}</span>`).join('')}
-      <div class="sheet">
-      <div class="h">Offence</div>
-      ${row('Physical damage', `${fmt(st.physMin)}–${fmt(st.physMax)}`)}
-      ${row('Elemental damage', `${fmt(st.eleMin)}–${fmt(st.eleMax)}`)}
-      ${row('Attacks / sec', st.aps.toFixed(2))}
-      ${row('Crit chance', st.crit.toFixed(1) + '%')}
-      ${row('Crit multiplier', Math.round(st.critMulti) + '%')}
-      ${row('DPS', fmt(st.dps))}
-      ${st.role === 'healer' ? row('Healing / sec', fmt(st.hps)) : ''}
-      ${row('Healing multiplier', '×' + st.healMult.toFixed(2))}
-      ${row('Skill recharge', `${st.cdr.toFixed(0)}% faster`)}
-      <div class="h">Defence</div>
-      ${row('Life', fmt(st.maxLife))}
-      ${row('Armour', `${fmt(st.armour)} <span class="muted">(${(st.armourRed * 100).toFixed(0)}%)</span>`)}
-      ${row('Evasion', `${fmt(st.evasion)} <span class="muted">(${(st.evadeChance * 100).toFixed(0)}%)</span>`)}
-      ${row('Elemental resist', `<span class="${st.resist < 0 ? 'bad' : ''}">${st.resist.toFixed(0)}%</span> <span class="muted">(−${resistPenalty(state.run ? state.run.level : state.stage)} zone)</span>`)}
-      ${row('Block', st.block.toFixed(0) + '%')}
-      ${row('Damage reduction', (st.dr * 100).toFixed(0) + '%')}
-      ${row('Regen / sec', fmt(st.regen))}
-      ${row('Leech', st.leech.toFixed(1) + '%')}
-      ${row('Effective HP', fmt(st.ehp))}
-      <div class="h">Party</div>
-      ${row('Gold found', '+' + state.combat.party.goldFind.toFixed(0) + '%')}
-      ${row('Item rarity', '+' + state.combat.party.rarity.toFixed(0) + '%')}
-      ${row('Experience', '+' + state.combat.party.xpGain.toFixed(0) + '%')}
-      ${row('Best stage', state.maxStage)}
-      ${row('Monsters slain', fmt(state.totalKills))}
-      ${row('Party wipes', state.deaths)}
-    </div></div>
-    <div class="panel"><h2>Save</h2>
-      <div class="muted" style="font-size:11px;margin-bottom:6px">Version ${VERSION}</div>
-      <div class="actions">
-        <button class="btn" data-act="export">Export</button>
-        <button class="btn" data-act="import">Import</button>
-        <button class="btn danger full" data-act="reset">Delete save &amp; restart</button>
-      </div>
-      <textarea id="save-box" class="hidden" placeholder="Paste a save here, then tap Import again"></textarea>
-    </div>`;
-  $('#sel-salvage').onchange = (e) => { state.settings.autoSalvage = +e.target.value; save(state); };
-}
-
-// ---------- Render dispatch ----------
-function render() {
-  renderHud();
-  ({ battle: renderBattle, heroes: renderHeroes, bag: renderBag, pets: renderPets, events: renderEvents, more: renderMore })[tab]();
-}
-document.querySelector('#tabs').addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-tab]');
-  if (!b) return;
-  tab = b.dataset.tab;
-  skillPick = null;
-  syncTabs();
-  render();
-});
-function syncTabs() { view.scrollTop = 0; document.querySelectorAll('#tabs button').forEach((x) => x.classList.toggle('active', x.dataset.tab === tab)); }
-
-// ---------- Actions ----------
-function doAction(el) {
-  const a = el.dataset.act;
-  const m = modalCtx;
-  switch (a) {
-    case 'stage-prev': if (state.run) return; state.stage = Math.max(1, state.stage - 1); state.kills = 0; state.settings.autoAdvance = false; state.combat = null; ensureCombat(state); break;
-    case 'stage-next': if (state.run) return; state.stage = Math.min(state.maxStage, state.stage + 1); state.kills = 0; state.combat = null; ensureCombat(state); break;
-    case 'auto-adv': state.settings.autoAdvance = !state.settings.autoAdvance; state.pushBlocked = false; break;
-    case 'push': state.pushBlocked = false; break;
-    case 'sel-hero': state.ui.hero = +el.dataset.i; setSelected(null); skillPick = null; break;
-    case 'goto-hero': state.ui.hero = +el.dataset.i; tab = 'heroes'; syncTabs(); break;
-    case 'open-eq': openItem(H().gear[el.dataset.slot], 'eq', HI(), el.dataset.slot); return;
-    case 'open-bag': openItem(state.bag.find((b) => b.uid === el.dataset.uid), 'bag'); return;
-    case 'close': closeModal(); return;
-    case 'equip': { const i = +el.dataset.i; equipFromBag(state, el.dataset.uid, i); closeModal(); toast(`Equipped on ${heroName(i)}`); break; }
-    case 'unequip': unequip(state, m.hero, m.slot); closeModal(); break;
-    case 'lock': m.item.locked = !m.item.locked; save(state); reopen(); render(); return;
-    case 'salvage-one': {
-      const v = salvage(state, m.item);
-      state.bag = state.bag.filter((b) => b !== m.item);
-      closeModal(); toast(`♻️ +💠${v.shards}`); break;
-    }
-    case 'upgrade': {
-      const c = upgradeCost(m.item);
-      if (!canUpgrade(m.item) || !costOk(c)) return;
-      state.gold -= c.gold; state.shards -= c.shards; m.item.upgrade++; state.pushBlocked = false;
-      afterChange(); reopen(); return;
-    }
-    case 'reroll': {
-      const c = rerollCost(m.item);
-      if (!costOk(c)) return;
-      state.gold -= c.gold; state.shards -= c.shards; rerollItem(m.item); state.pushBlocked = false;
-      afterChange(); reopen(); return;
-    }
-    case 'promote': {
-      const c = promoteCost(m.item);
-      if (!canPromote(m.item) || !costOk(c)) return;
-      state.gold -= c.gold; state.shards -= c.shards; promoteItem(m.item); state.pushBlocked = false;
-      afterChange(); reopen(); toast(`✨ Now <span class="${rc(m.item.rarity)}">${RARITIES[m.item.rarity].name}</span>`); return;
-    }
-    case 'salvage-menu': openSalvageMenu(); return;
-    case 'salvage-upto': {
-      const r = +el.dataset.r; let n = 0, sh = 0;
-      state.bag = state.bag.filter((b) => { if (!b.locked && !b.set && !b.mythic && b.rarity <= r) { sh += salvage(state, b).shards; n++; return false; } return true; });
-      closeModal(); toast(`♻️ Salvaged ${n} items · +💠${sh}`); break;
-    }
-    case 'sort': state.bag.sort((x, y) => (y.mythic ? 1 : 0) - (x.mythic ? 1 : 0) || (y.set ? 1 : 0) - (x.set ? 1 : 0) || y.rarity - x.rarity || y.ilvl - x.ilvl); break;
-    case 'filter': bagFilter = +el.dataset.f; break;
-    case 'sub': heroSub = el.dataset.s; skillPick = null; break;
-    case 'zin': zoom($('#tree-svg'), 1.25); return;
-    case 'zout': zoom($('#tree-svg'), 0.8); return;
-    case 'zhome': centerOn($('#tree-svg'), `start_${H().cls}`); return;
-    case 'auto-alloc': { const n = autoAllocate(state, HI()); toast(n ? `🌳 Allocated ${n} point${n > 1 ? 's' : ''}` : 'No useful nodes in reach'); break; }
-    case 'alloc-path': {
-      const id = getSelected(), path = pathTo(C(), id);
-      if (!path.length || path.length > treePointsFree(C())) return;
-      H().tree.push(...path); state.pushBlocked = false;
-      if (NODES[id].keystone) toast(`${NODES[id].icon} ${NODES[id].name}!`);
-      break;
-    }
-    case 'refund': {
-      const id = getSelected(), c = refundCost(state.level);
-      if (!canRefund(C(), id) || state.gold < c) return;
-      state.gold -= c; H().tree = H().tree.filter((x) => x !== id); break;
-    }
-    case 'tree-reset': {
-      const c = resetCost(state.level);
-      if (state.gold < c || !confirm('Refund every passive point for this hero?')) return;
-      state.gold -= c; H().tree = []; setSelected(null); break;
-    }
-    case 'pick-slot': skillPick = +el.dataset.i; break;
-    case 'pick-cancel': skillPick = null; break;
-    case 'slot-clear': H().skills.bar[skillPick] = null; skillPick = null; break;
-    case 'skill-tag': skillTag = el.dataset.t; break;
-    case 'socket-pick': openStonePicker(getSelected()); return;
-    case 'socket-set': {
-      const uid = el.dataset.uid, sock = m && m.sock;
-      if (!sock) return;
-      for (const hh of state.heroes) for (const [k, u] of Object.entries(hh.sockets || {})) if (u === uid) delete hh.sockets[k];
-      H().sockets[sock] = uid; modalCtx = null; $('#modal').classList.add('hidden');
-      toast('💎 Stone socketed'); break;
-    }
-    case 'socket-clear': delete H().sockets[getSelected()]; break;
-    case 'stones-best': { const n = bestStones(state); toast(n ? `💎 Socketed ${n} stone${n > 1 ? 's' : ''}` : 'No sockets with skills in reach yet'); break; }
-    case 'assign': {
-      const id = el.dataset.id, bar = H().skills.bar;
-      const prev = bar.indexOf(id);
-      if (prev >= 0) bar[prev] = bar[skillPick] || null;
-      bar[skillPick] = id; while (bar.length < SKILL_SLOTS) bar.push(null); skillPick = null; break;
-    }
-    case 'skill-up': {
-      const h = H(), id = el.dataset.id, rank = h.skills.ranks[id], c = skillUpgradeCost(rank, state.level);
-      if (rank >= MAX_SKILL_RANK || !costOk(c)) return;
-      state.gold -= c.gold; state.shards -= c.shards; h.skills.ranks[id]++; state.pushBlocked = false;
-      if (MILESTONES.includes(h.skills.ranks[id])) toast(`✨ ${SKILL_BY_ID[id].name}: choose an upgrade!`);
-      if (m && m.skill) { afterChange(); openSkill(id); return; }
-      break;
-    }
-    case 'skill-open': openSkill(el.dataset.id); return;
-    case 'mod-pick': {
-      const h = H(), id = el.dataset.id, i = +el.dataset.i, o = +el.dataset.o;
-      const picks = h.skills.mods[id] || (h.skills.mods[id] = []);
-      if (picks[i] != null) {
-        const c = respecModCost(h.skills.ranks[id]);
-        if (state.shards < c.shards) { toast('Not enough 💠'); return; }
-        state.shards -= c.shards;
-      }
-      picks[i] = o; afterChange(); openSkill(id); return;
-    }
-    case 'asc-pick': {
-      const h = H(), i = +el.dataset.i, o = +el.dataset.o;
-      if (h.asc[i] != null) {
-        const c = ascRespecCost(state.level);
-        if (state.gold < c) { toast('Not enough gold'); return; }
-        if (!confirm(`Change class passive for 🪙${fmt(c)}?`)) return;
-        state.gold -= c;
-      }
-      h.asc[i] = o; state.pushBlocked = false;
-      toast(`${CLASS_BY_ID[h.cls].icon} ${ASCENDANCY[h.cls][i][o].name}!`); break;
-    }
-    case 'tab-battle': tab = 'battle'; syncTabs(); break;
-    case 'enter': {
-      const err = startRun(state, el.dataset.k, +el.dataset.t);
-      if (err) { toast(err); return; }
-      tab = 'battle'; syncTabs();
-      toast({ raid: '🔱 Raid started!', dungeon: '🗝️ Vault opened!', invasion: '🐉 The world boss attacks!' }[el.dataset.k]); break;
-    }
-    case 'loot-info': openLootInfo(el.dataset.k, +el.dataset.t); return;
-    case 'enter-next': {
-      modalCtx = null; $('#modal').classList.add('hidden');
-      const err = startRun(state, el.dataset.k, +el.dataset.t);
-      if (err) { toast(err); return; }
-      tab = 'battle'; syncTabs(); toast(el.dataset.k === 'raid' ? '🔱 Raid started!' : '🗝️ Vault opened!'); break;
-    }
-    case 'opt-party-modal': {
-      const before = state.combat.party.power;
-      const r = optimiseAll(state);
-      const gain = (state.combat.party.power / before - 1) * 100;
-      toast(`⚡ ${describeResult(r) || 'Already optimal'}${gain > 0.05 ? ` <span class="good">+${gain.toFixed(1)}%</span>` : ''}`);
-      el.disabled = true; el.innerHTML = `✓ Optimised<small>${gain > 0.05 ? '+' + gain.toFixed(1) + '% power' : 'nothing to change'}</small>`;
-      save(state); return;
-    }
-    case 'abandon':
-      if (state.run && state.run.kind !== 'invasion' && !confirm('Abandon this run? Your key/sigil is lost.')) return;
-      abandonRun(state, ev); break;
-    case 'pick-role-class': { const i = HI(); openClassPicker(state.heroes[i].role, true, i); return; }
-    case 'pick-class': {
-      const id = el.dataset.id, i = +el.dataset.i;
-      const h = state.heroes[i];
-      const changing = !!h.cls;
-      if (changing) {
-        const c = resetCost(state.level) * 2;
-        if (state.gold < c) return;
-        state.gold -= c;
-      }
-      h.cls = id; h.tree = []; h.asc = []; h.skills.bar = h.skills.bar.map((s) => (s && SKILL_BY_ID[s] && SKILL_BY_ID[s].cls ? null : s));
-      if (!changing && h.gear.weapon && h.gear.weapon.rarity === 0 && h.gear.weapon.ilvl <= 1) h.gear.weapon = newHero(h.role, id).gear.weapon;
-      syncSkills(state);
-      modalCtx = null; $('#modal').classList.add('hidden');
-      state.combat = null; ensureCombat(state);
-      toast(`${CLASS_BY_ID[id].icon} ${CLASS_BY_ID[id].name} joins the party`);
-      afterChange();
-      if (ensureParty() && !changing) offlineCatchUp();
-      return;
-    }
-    case 'change-class': openClassPicker(H().role, true, HI()); return;
-    case 'pet-set': state.pets.active = el.dataset.id; break;
-    case 'pet-up': {
-      const id = state.pets.active, l = state.pets.owned[id], c = petUpgradeCost(l);
-      if (l >= PET_MAX_LEVEL || !costOk(c)) return;
-      state.gold -= c.gold; state.shards -= c.shards; state.pets.owned[id]++; break;
-    }
-    case 'hatch': {
-      const r = hatchEgg(state);
-      if (r) toast(r.dup ? `🥚 ${r.pet.name} again: now Lv ${state.pets.owned[r.pet.id]}!` : `🥚 New pet: ${r.pet.name}!`);
-      break;
-    }
-    case 'open-box': {
-      const t = +el.dataset.t;
-      const r = openBox(state, t, ev);
-      if (r) showBox(t, r);
-      afterChange();
-      return;
-    }
-    case 'buy': { if (buyShop(state, el.dataset.id)) toast(`Bought ${SHOP.find((s) => s.id === el.dataset.id).name}`); break; }
-    case 'opt-hero': case 'opt-party': {
-      const hs = a === 'opt-hero' ? [HI()] : [0, 1, 2];
-      const before = state.combat.party.power;
-      const r = optimiseAll(state, hs);
-      if (!r) { toast('Choose classes for every hero first'); return; }
-      const gain = (state.combat.party.power / before - 1) * 100;
-      toast(`⚡ ${describeResult(r) || 'Already optimal'}${r.pet ? ` · pet: ${PET_BY_ID[r.pet].name}` : ''}${gain > 0.05 ? ` <span class="good">+${gain.toFixed(1)}% power</span>` : ''}`);
-      break;
-    }
-    case 'eq-best': case 'eq-best-all': { const n = equipBest(state, a === 'eq-best' ? [HI()] : [0, 1, 2]); toast(n ? `🛡️ Equipped ${n} upgrade${n > 1 ? 's' : ''}` : 'Nothing better in the bag'); break; }
-    case 'skills-best': case 'skills-best-all': { const n = bestSkills(state, a === 'skills-best' ? [HI()] : [0, 1, 2]); toast(n ? '✴️ Skill bar updated' : 'Already using the best skills'); break; }
-    case 'asc-best': { const n = bestAscendancy(state, [HI()]); toast(n ? '⚜️ Class passives chosen' : 'No open choices'); break; }
-    case 'pet-best': { const id = bestPet(state); toast(id ? `🐾 ${PET_BY_ID[id].name} is now active` : 'Already using the best pet'); break; }
-    case 'set-autoopt': state.settings.autoOptimise = !state.settings.autoOptimise; break;
-    case 'set-autoequip': state.settings.autoEquip = !state.settings.autoEquip; break;
-    case 'export': {
-      save(state);
-      const box = $('#save-box'); box.classList.remove('hidden');
-      box.value = btoa(unescape(encodeURIComponent(localStorage.getItem(SAVE_KEY))));
-      box.select(); try { navigator.clipboard.writeText(box.value); toast('Save copied'); } catch {}
-      return;
-    }
-    case 'import': {
-      const box = $('#save-box');
-      if (box.classList.contains('hidden') || !box.value.trim()) { box.classList.remove('hidden'); box.value = ''; box.focus(); return; }
-      try {
-        const json = decodeURIComponent(escape(atob(box.value.trim())));
-        JSON.parse(json); localStorage.setItem(SAVE_KEY, json); location.reload();
-      } catch { toast('Invalid save'); }
-      return;
-    }
-    case 'reset':
-      if (!confirm('Delete your save and start over? This cannot be undone.')) return;
-      localStorage.removeItem(SAVE_KEY); state = newState(); ensureCombat(state); render(); ensureParty(); return;
-    default: return;
-  }
-  afterChange();
-}
-function showBox(t, r) {
-  $('#modal-card').innerHTML = `<h2>${BOX_INFO[t].icon} ${BOX_INFO[t].name}</h2>
-    <div class="feed">${r.items.map((l) => `<div><span class="${l.set ? 'rset' : rc(l.rarity)}">${TYPE_ICONS[l.type]} ${l.name}</span><span class="act ${l.action}">${l.action === 'equipped' && l.hero != null ? `→ ${heroName(l.hero)}` : l.action}</span></div>`).join('')}
-    ${r.extras.map((x) => `<div><span>${x}</span></div>`).join('')}</div>
-    <div class="actions"><button class="btn primary full" data-act="close">Nice</button></div>`;
-  modalCtx = null;
-  $('#modal').classList.remove('hidden');
-}
-document.body.addEventListener('click', (e) => {
-  const el = e.target.closest('[data-act]');
-  if (el && !el.disabled) doAction(el);
-});
-$('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
-
-// ---------- Main loop ----------
-function showRunEnd(e) {
-  if (e.run.kind === 'invasion') {
-    $('#modal-card').innerHTML = `<h2>🐉 Invasion over</h2>
-      <p>Your party dealt <b>${fmt(e.damage)}</b> damage to ${e.run.name}.</p>
-      <div class="rank rank-${e.reward.tier}">Rank ${e.reward.tier}</div>
-      <p class="good">+🏅${e.reward.emblems} emblems · ${Object.entries(e.reward.boxes).map(([k, n]) => `${n}× ${BOX_INFO[k].name}`).join(' · ')}</p>
-      <div class="actions"><button class="btn primary full" data-act="close">Collect</button></div>`;
-    modalCtx = null;
-    $('#modal').classList.remove('hidden');
-    return;
-  }
-  showRunReport(e);
-}
-function showRunReport(e) {
-  const run = e.run, kind = run.kind, t = run.tier;
-  const name = kind === 'raid' ? raidName(t) : dungeonName(t);
-  const used = Math.min(run.time, run.timeLimit), limit = run.timeLimit;
-  const downs = run.downs || 0;
-  const loot = [];
-  for (const l of state.lootLog) { if (l === run.lootMark) break; loot.push(l); }
-  const rating = rate(e.success, used / limit, downs);
-  const where = kind === 'raid' ? `phase ${run.phase || 1}` : run.room > DUNGEON.rooms ? 'the Warden fight' : `room ${run.room}`;
-  const downTxt = downs ? `, ${downs} hero${downs > 1 ? 'es' : ''} went down` : ', nobody went down';
-  let comment;
-  if (!e.success) comment = e.reason === 'Out of time' ? `Out of time in ${where}. Your party survives but can't deal the damage fast enough.` : `Defeated in ${where} after ${Math.round(used)}s. The enemies hit harder than your party can absorb.`;
-  else comment = {
-    trivial: `Barely a warm-up: cleared in ${Math.round(used)}s of ${limit}s${downTxt}. This tier is beneath you.`,
-    easy: `A comfortable clear in ${Math.round(used)}s${downTxt}.`,
-    fair: `A solid run: ${Math.round(used)}s of ${limit}s${downTxt}.`,
-    hard: `That was close: ${Math.round(used)}s of ${limit}s${downTxt}. Any harder and it would have gone wrong.`,
-  }[rating];
-  // recommendation, using a quick simulation of what's next
-  let advice = '', next = null, again = null;
-  const haveEntry = kind === 'raid' ? state.sigils > 0 : state.keys > 0;
-  const entryName = kind === 'raid' ? '🔱 sigil' : '🗝️ key';
-  if (e.success) {
-    const nt = t + 1;
-    const unlocked = kind === 'raid' ? raidUnlocked(state, nt) : nt <= dungeonTiers(state);
-    if (!unlocked) advice = kind === 'raid' ? `Clear ${dungeonName(nt)} to unlock the next raid.` : `Tier ${nt} unlocks when you beat the stage ${nt * 10} boss in the campaign.`;
+    <div class="row2"><button class="btn primary grow" data-act="optimise">⚡ Optimise everything</button></div>
+    <div class="muted small">Optimise equips your best gear, picks skills, sockets gems, sets runes, inscriptions and companions, then spends gold and materials where they raise Power most.</div>`;
+  } else if (sub.equipment === 'bag') {
+    const f = bagFilter;
+    let items = state.bag.filter((it) => (f.slot === 'all' || it.slot === f.slot) && (f.rarity < 0 || it.rarity === f.rarity));
+    const deltas = new Map(items.slice(0, 80).map((it) => [it.id, sys.itemPowerDelta(state, it)]));
+    items = items.slice(0, 80).sort((a, b) => deltas.get(b.id) - deltas.get(a.id));
+    const sf = state.filters;
+    body = `<div class="filters"><select data-act="bagSlot"><option value="all">All slots</option>${SLOTS.filter((s) => s !== 'ring2').map((s) => `<option value="${s}" ${f.slot === s ? 'selected' : ''}>${SLOT_INFO[s].name}</option>`).join('')}</select>
+      <select data-act="bagRar"><option value="-1">All rarities</option>${RARITIES.map((r, i) => `<option value="${i}" ${f.rarity === i ? 'selected' : ''}>${r.name}</option>`).join('')}</select></div>
+      <div class="list">${items.length ? items.map((it) => itemCard(it, { delta: deltas.get(it.id) })).join('') : '<div class="muted">Bag is empty.</div>'}</div>
+      <div class="panel"><h3>Auto-salvage</h3>
+        <div class="attr"><span>Salvage new drops below</span><select data-act="salvBelow">${RARITIES.slice(0, 5).map((r, i) => `<option value="${i}" ${sf.salvageBelow === i ? 'selected' : ''}>${i === 0 ? 'Nothing' : r.name}</option>`).join('')}</select></div>
+        <div class="attr"><span>Always keep items with a unique affix</span><button class="btn small toggle ${sf.keepUniques ? 'on' : ''}" data-act="keepUniq">${sf.keepUniques ? 'On' : 'Off'}</button></div>
+        <div class="attr"><span>Auto-equip upgrades</span><button class="btn small toggle ${sf.autoEquip ? 'on' : ''}" data-act="autoEquip">${sf.autoEquip ? 'On' : 'Off'}</button></div>
+        <div class="small muted">Keep items with these affixes:</div>
+        <div class="chips">${AFFIXES.map((a) => `<button class="chip ${sf.keepAffixes.includes(a.key) ? 'on' : ''}" data-act="keepAff" data-k="${a.key}">${STAT_NAMES[a.key]}</button>`).join('')}</div>
+        <div class="row2">${[1, 2, 3].map((r) => `<button class="btn small" data-act="salvAll" data-r="${r}">Salvage ≤ ${RARITIES[r].name}</button>`).join('')}</div>
+        <div class="small muted">Locked items and protected items are never salvaged.</div></div>`;
+  } else if (sub.equipment === 'gems') {
+    if (!unlocked(state, 'gems')) body = `<div class="panel muted">Gems, sockets and runes unlock at level 15.</div>`;
+    else body = `<div class="panel"><h3>Gems <span class="muted small">combine 3 into the next tier</span></h3>
+      <div class="gemgrid"><div></div>${GEM_TIERS.map((t, i) => `<div class="small muted">T${i + 1}</div>`).join('')}
+      ${GEM_KEYS.map((g) => `<div>${GEMS[g].icon} <span class="small">${GEMS[g].name}</span></div>${GEM_TIERS.map((_, t) => { const n = state.gems[g + t] || 0; return `<button class="gem ${n ? '' : 'zero'}" data-act="gemCombine" data-g="${g}" data-t="${t}" title="+${gemValue(g, t)}% ${STAT_NAMES[GEMS[g].stat]}">${n}</button>`; }).join('')}`).join('')}</div>
+      <div class="small muted">Ruby attack · Sapphire crit damage · Emerald crit chance · Topaz attack speed · Amethyst magic · Diamond life + armour. Tap a stack of 3+ to combine. Socket gems from an item's details.</div>
+      <button class="btn small" data-act="gemAll">Combine all</button></div>
+      <div class="panel"><h3>Runes <span class="muted small">${runeSlots(state)} slots</span></h3>
+        <div class="runeslots">${[0, 1, 2].map((i) => { const k = state.runesEquipped[i]; return `<div class="rslot ${i >= runeSlots(state) ? 'lock' : ''}">${i >= runeSlots(state) ? '🔒 L60' : k ? `${RUNES[k].icon} ${RUNES[k].name.replace('Rune of ', '')} ${state.runes[k]}` : 'empty'}</div>`; }).join('')}</div>
+        ${RUNE_KEYS.map((k) => { const r = state.runes[k] || 0; return `<div class="attr"><span>${RUNES[k].icon} <b>${RUNES[k].name}</b> ${r ? `<span class="tag">R${r}</span>` : ''}<div class="small muted">${RUNES[k].text(Math.max(1, r))}</div></span>
+          <span class="col">${r < RUNE_MAX ? `<button class="btn small" data-act="rune" data-k="${k}">${r ? 'Rank up' : 'Craft'} ${costHtml(runeCraftCost(r + 1))}</button>` : '<b>Max</b>'}
+          ${r ? `<button class="btn small" data-act="runeEq" data-k="${k}">Equip</button>` : ''}</span></div>`; }).join('')}</div>`;
+  } else if (sub.equipment === 'ins') {
+    if (!unlocked(state, 'inscriptions')) body = `<div class="panel muted">Inscriptions unlock at level 35. They drop from bosses, Boss Rush and Rifts, and can be carved in Crafting.</div>`;
     else {
-      const p = predict(state, kind, nt, true);
-      const r = p ? p.rating : 'deadly';
-      const lab = RATINGS[r];
-      advice = r === 'deadly' ? `Tier ${nt} looks ${lab.icon} too hard right now. Farm this tier or push the campaign, then tap ⚡ Optimise.`
-        : r === 'hard' ? `Tier ${nt} looks ${lab.icon} hard but doable. Optimise first, then go for it.`
-        : `Tier ${nt} looks ${lab.icon} ${lab.label.toLowerCase()}. You're ready, go for it.`;
-      if (haveEntry && r !== 'deadly') next = nt;
+      const sets = inscriptionSets(state);
+      body = `<div class="panel"><h3>Inscription slots</h3><div class="ins-slots">${state.inscribed.map((ins, i) => `<div class="ins ${ins ? '' : 'empty'}" data-act="uninscribe" data-i="${i}" style="${ins ? `border-color:${INSCR_TAGS[ins.tag].color}` : ''}">${ins ? `${INSCR_TAGS[ins.tag].icon}<div class="small">${statLine(ins.stat, ins.v)}</div>` : '◇'}</div>`).join('')}</div>
+        <div class="small">${Object.entries(INSCR_TAGS).map(([k, t]) => { const n = sets[k] || 0; return `<div class="${n >= 2 ? '' : 'muted'}">${t.icon} ${t.name} (${n}/6): ${[2, 4, 6].map((need, j) => `<span class="${n >= need ? 'good' : ''}">${need}: ${t.txt[j]}</span>`).join(' · ')}</div>`; }).join('')}</div></div>
+        <div class="panel"><h3>Owned (${state.inscriptions.length})</h3><div class="ins-list">${state.inscriptions.sort((a, b) => a.tag.localeCompare(b.tag) || b.v - a.v).map((ins) => `<div class="ins" data-act="inscribe" data-id="${ins.id}" style="border-color:${INSCR_TAGS[ins.tag].color}">${INSCR_TAGS[ins.tag].icon}<div class="small">${statLine(ins.stat, ins.v)}</div></div>`).join('') || '<div class="muted">None yet.</div>'}</div>
+        <div class="small muted">Tap to place in the first empty slot (or replace the weakest). Tap a slotted one to remove it.</div></div>`;
     }
-    if (haveEntry) again = t;
+  } else if (sub.equipment === 'craft') {
+    body = `<div class="panel"><h3>Materials</h3>${MAT_KEYS.map((k) => `<div class="attr"><span>${MATERIALS[k].icon} <b>${MATERIALS[k].name}</b><div class="small muted">${MATERIALS[k].src}</div></span><b>${fmt(state.mats[k] || 0)}</b></div>`).join('')}</div>
+      <div class="panel"><h3>Recipes</h3>${RECIPES.map((r) => {
+        const ok = state.level >= r.lvl || state.ascensions;
+        return `<div class="recipe ${ok ? '' : 'locked'}"><div><b>${r.name}</b> <span class="muted small">L${r.lvl}</span><div class="small">${r.text}</div><div class="small">${costHtml(r.cost)}</div></div>
+          ${r.pick ? `<select data-recipe-slot="${r.id}">${SLOTS.filter((s) => s !== 'ring2').map((s) => `<option value="${s}">${SLOT_INFO[s].name}</option>`).join('')}</select>` : ''}
+          <button class="btn small" data-act="craft" data-id="${r.id}" ${ok && sys.canAfford(state, r.cost) ? '' : 'disabled'}>Craft</button></div>`;
+      }).join('')}</div>`;
+  }
+  view.innerHTML = subtabs('equipment', tabs) + body;
+}
+
+function itemModal(id) {
+  const it = state.bag.find((x) => x.id === id) || SLOTS.map((s) => state.gear[s]).find((x) => x && x.id === id);
+  if (!it) return closeModal();
+  it.isNew = false;
+  const equippedSlot = SLOTS.find((s) => state.gear[s] === it);
+  const stats = itemStats(it);
+  const delta = equippedSlot ? null : sys.itemPowerDelta(state, it);
+  const cmp = equippedSlot ? null : state.gear[sys.bestSlot(state, it)];
+  const gemsOwned = Object.keys(state.gems).filter((g) => state.gems[g] > 0);
+  modal(`<div class="mhead" style="color:${rc(it.rarity)}">${esc(it.name)}${it.awakened ? ' ✦' : ''}</div>
+    <div class="muted small">${RARITIES[it.rarity].name} ${SLOT_INFO[it.slot].name} · item level ${it.ilvl}${it.enhance ? ` · +${it.enhance}` : ''}${it.refine ? ` · refined ${it.refine}` : ''}</div>
+    <div class="istats">${Object.entries(stats).map(([k, v]) => `<div>${statLine(k, v)}</div>`).join('')}</div>
+    ${it.unique ? `<div class="uniq">★ ${UNIQUES[it.unique].text}</div>` : ''}
+    ${it.enchant ? `<div class="small" style="color:#c08bff">Enchant: ${STAT_NAMES[it.enchant.key]} rank ${it.enchant.rank}</div>` : ''}
+    ${delta !== null ? `<div class="cmp ${delta > 0 ? 'good' : 'bad'}">Power ${delta > 0 ? '+' : ''}${fmt(delta)} vs ${cmp ? esc(cmp.name) : 'empty slot'}</div>` : ''}
+    ${it.sockets.length ? `<div class="sockets">${it.sockets.map((g, i) => `<div class="sock">${g ? `${GEMS[g.slice(0, -1)].icon} ${GEM_TIERS[+g.slice(-1)]} <button class="btn tiny" data-act="unsock" data-id="${it.id}" data-i="${i}">x</button>` : unlocked(state, 'gems') ? `<select data-act="sock" data-id="${it.id}" data-i="${i}"><option value="">◇ socket…</option>${gemsOwned.map((gk) => `<option value="${gk}">${GEMS[gk.slice(0, -1)].name} ${GEM_TIERS[+gk.slice(-1)]} (${state.gems[gk]})</option>`).join('')}</select>` : '◇ (L15)'}</div>`).join('')}</div>` : ''}
+    <div class="upg">
+      <button class="btn small" data-act="enh" data-id="${it.id}" ${it.enhance >= ENHANCE_MAX ? 'disabled' : ''}>Enhance +${it.enhance + 1}<br>${it.enhance < ENHANCE_MAX ? costHtml(enhanceCost(it)) : 'max'}</button>
+      <button class="btn small" data-act="ref" data-id="${it.id}" ${it.refine >= REFINE_MAX ? 'disabled' : ''}>Refine ${it.refine}/${REFINE_MAX}<br>${it.refine < REFINE_MAX ? costHtml(refineCost(it)) : 'max'}</button>
+      <button class="btn small" data-act="ench" data-id="${it.id}" ${it.enchant?.rank >= ENCHANT_MAX ? 'disabled' : ''}>${it.enchant ? 'Empower enchant' : 'Enchant'}<br>${costHtml(enchantCost(it))}</button>
+      ${it.rarity >= 4 ? `<button class="btn small" data-act="awk" data-id="${it.id}" ${canAwaken(it) && unlocked(state, 'awakening') ? '' : 'disabled'}>Awaken${it.awakened ? 'ed' : ''}<br>${it.awakened ? '✦' : canAwaken(it) ? costHtml(awakenItemCost(it)) : 'needs +15, L70'}</button>` : ''}
+    </div>
+    <div class="small muted">Upgrades never destroy or downgrade items.</div>
+    <div class="row2">
+      ${equippedSlot ? `<button class="btn" data-act="unequip" data-slot="${equippedSlot}">Unequip</button>` : `<button class="btn primary" data-act="equip" data-id="${it.id}">Equip</button>${it.slot === 'ring1' ? `<button class="btn" data-act="equip" data-id="${it.id}" data-slot="ring2">Equip ring 2</button>` : ''}`}
+      <button class="btn" data-act="lock" data-id="${it.id}">${it.locked ? 'Unlock' : 'Lock'}</button>
+      ${equippedSlot ? '' : `<button class="btn danger" data-act="salvage" data-id="${it.id}" ${it.locked ? 'disabled' : ''}>Salvage</button>`}
+      <button class="btn" data-act="close">Close</button></div>
+    ${equippedSlot ? '' : `<div class="small muted">Salvage gives ${Object.entries(salvageValue(it)).map(([k, v]) => `${k === 'gold' ? '🪙' : MATERIALS[k].icon}${fmt(v)}`).join(' ')}</div>`}`);
+}
+
+// ---------------- Skills ----------------
+function renderSkills() {
+  const tabs = [['slots', 'Skill slots'], ['rules', 'Automation rules']];
+  let body = '';
+  const open = unlockedSlots(state);
+  if (sub.skills === 'slots') {
+    body = SLOT_ROLES.map((ro) => {
+      const id = state.skills[ro.id];
+      const isOpen = open.includes(ro.id);
+      const opts = skillsForRole(state.cls, ro.id);
+      return `<div class="panel skslot ${isOpen ? '' : 'locked'}"><div class="skh"><b>${ro.icon} ${ro.name}</b> <span class="muted small">${ro.desc}${isOpen ? '' : ` · unlocks at level ${ro.lvl}`}</span></div>
+        ${opts.map((sk) => {
+          const r = state.skillRanks[sk.id] || 1, aw = !!state.awakenedSkills[sk.id], on = id === sk.id;
+          const tree = CLASSES[state.cls].trees.find((t) => t.id === sk.tree);
+          return `<div class="skopt ${on ? 'on' : ''}" ${isOpen && !on ? `data-act="setSkill" data-role="${ro.id}" data-id="${sk.id}"` : ''}>
+            <div class="skic">${sk.icon}</div><div class="grow"><b>${sk.name}</b> <span class="small muted">${tree.icon} ${tree.name} · ${ELEM_ICONS[sk.elem] || ''} ${sk.elem}</span>${on ? ` <span class="tag">R${r}${aw ? ' ✦' : ''}</span>` : ''}
+            <div class="small">${skillText(sk, on ? r : 1, on && aw)}</div>
+            ${on ? `<div class="row2"><button class="btn small" data-act="skUp" data-id="${sk.id}" ${r >= SKILL_MAX ? 'disabled' : ''}>${r >= SKILL_MAX ? 'Max rank' : `Rank ${r + 1} ${costHtml(skillUpgradeCost(r))}`}</button>
+              ${unlocked(state, 'awakening') ? `<button class="btn small" data-act="skAwk" data-id="${sk.id}" ${aw || r < 10 ? 'disabled' : ''}>${aw ? 'Awakened ✦' : `Awaken (R10) ${costHtml(awakenCost())}`}</button>` : ''}</div>` : ''}</div></div>`;
+        }).join('')}</div>`;
+    }).join('') + `<div class="muted small">Skills cast automatically on cooldown using your automation rules. Awakening (level 70) evolves a rank 10 skill: +50% power, -20% cooldown and extra hits/stacks.</div>`;
   } else {
-    // find the highest lower tier that should go well
-    let easier = null;
-    for (let k = t - 1; k >= 1 && !easier; k--) {
-      if (kind === 'raid' && !raidUnlocked(state, k)) continue;
-      const p = predict(state, kind, k, true);
-      if (p && ['easy', 'fair', 'trivial'].includes(p.rating)) easier = k;
-    }
-    advice = easier ? `Farm Tier ${easier} (it looks manageable) and the campaign for gear, then tap ⚡ Optimise before trying again.`
-      : `Farm the campaign for better gear and levels, then tap ⚡ Optimise before trying again.`;
-    if (easier && haveEntry) again = easier;
+    const R = state.rules;
+    body = `<div class="panel"><h3>Automation rules</h3>
+      <div class="rule"><span>Use heals when life is below</span><span><input type="range" min="20" max="90" step="5" value="${R.heal}" data-act="ruleHeal"> <b id="ruleHealV">${R.heal}%</b></span></div>
+      <div class="rule"><span>Use ultimate on</span><select data-act="rule" data-k="ult">${[['boss', 'Bosses only'], ['elite', 'Bosses and elites'], ['always', 'Whenever ready']].map(([v, n]) => `<option value="${v}" ${R.ult === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div class="rule"><span>Target priority</span><select data-act="rule" data-k="target">${[['lowest', 'Lowest life'], ['highest', 'Highest life'], ['elite', 'Bosses/elites first'], ['first', 'Nearest']].map(([v, n]) => `<option value="${v}" ${R.target === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div class="rule"><span>Use AoE skills when at least</span><select data-act="rule" data-k="aoeMin">${[1, 2, 3].map((v) => `<option value="${v}" ${R.aoeMin === v ? 'selected' : ''}>${v} enem${v > 1 ? 'ies' : 'y'}</option>`).join('')}</select></div>
+      <div class="rule"><span>Save shields/dodges for boss telegraphs</span><button class="btn small toggle ${R.saveDef ? 'on' : ''}" data-act="ruleDef">${R.saveDef ? 'On' : 'Off'}</button></div>
+      <div class="small muted">Defensive skills that heal fire under the life threshold. Shields, damage reduction and dodges are held for the next ⚠ telegraph when "save" is on (or used at half the threshold in an emergency).</div></div>`;
   }
-  const R = RATINGS[rating];
-  $('#modal-card').innerHTML = `
-    <div class="report ${e.success ? 'win' : 'lose'}">
-      <div class="rep-title">${e.success ? '🏆 Cleared!' : '💀 Failed'}</div>
-      <div class="rep-name">${kind === 'raid' ? '🔱' : '🗝️'} ${name} <span class="muted">· Tier ${t}</span></div>
-      <div class="rating big ${R.cls}">${R.icon} ${e.success ? R.label : 'Too hard'}</div>
-    </div>
-    <div class="kv panel"><div><b>${Math.round(used)}s</b><small>of ${limit}s</small></div><div><b>${downs}</b><small>Heroes down</small></div><div><b>${loot.length}</b><small>Items</small></div></div>
-    <p class="rep-comment">${comment}</p>
-    <p class="rep-advice">💡 ${advice}</p>
-    ${e.success && e.reason ? `<p class="good" style="font-size:12px;text-align:center">${e.reason}</p>` : ''}
-    ${loot.length ? `<div class="feed">${loot.slice(0, 10).map((l) => `<div><span class="${l.set ? 'rset' : rc(l.rarity)}">${TYPE_ICONS[l.type]} ${l.name}</span><span class="act ${l.action}">${l.action === 'equipped' && l.hero != null ? `→ ${heroName(l.hero)}` : l.action}</span></div>`).join('')}</div>` : ''}
-    <div class="actions">
-      ${next ? `<button class="btn primary full" data-act="enter-next" data-k="${kind}" data-t="${next}">▶ Next: Tier ${next} <small>uses a ${entryName}</small></button>` : ''}
-      ${again ? `<button class="btn" data-act="enter-next" data-k="${kind}" data-t="${again}">↻ Run Tier ${again}<small>uses a ${entryName}</small></button>` : ''}
-      <button class="btn" data-act="opt-party-modal">⚡ Optimise<small>then decide</small></button>
-      <button class="btn ${next || again ? '' : 'full'}" data-act="close">🌾 Farm the campaign<small>back to stage ${state.stage}</small></button>
-    </div>`;
-  modalCtx = null;
-  $('#modal').classList.remove('hidden');
+  view.innerHTML = subtabs('skills', tabs) + body;
 }
-let battleDirty = false;
-let last = performance.now(), acc = 0, lastSave = Date.now(), dirtyAt = 0, lastRender = 0;
-const STEP = 0.05;
-function frame(now) {
-  const dt = Math.min(1, (now - last) / 1000);
-  last = now;
-  if (partyReady(state)) {
-    acc += dt * state.settings.speed;
-    while (acc >= STEP) { tick(state, STEP, ev); acc -= STEP; }
-  }
-  let structural = false;
-  for (const e of ev) {
+
+// ---------------- Activities ----------------
+function renderActivities() {
+  const L = state.level;
+  const has = (k) => state.ascensions || L >= ACTIVITIES[k].lvl;
+  const card = (k, inner) => `<div class="panel act ${has(k) ? '' : 'locked'}"><div class="acth"><b>${ACTIVITIES[k].icon} ${ACTIVITIES[k].name}</b>${has(k) ? '' : ` <span class="muted small">unlocks at level ${ACTIVITIES[k].lvl}</span>`}</div><div class="small muted">${ACTIVITIES[k].text}</div>${has(k) ? inner : ''}</div>`;
+  const busy = !!state.run;
+  const dis = busy ? 'disabled' : '';
+  const regions = REGIONS.map((r, i) => {
+    const first = i * 10 + 1, cleared = state.bossesBeaten[i], reached = state.maxStage >= first;
+    return `<button class="region ${cleared ? 'done' : ''} ${reached ? '' : 'lock'} ${regionOf(state.stage) === i && !state.run ? 'here' : ''}" data-act="goRegion" data-i="${i}" ${reached ? '' : 'disabled'}><b>${i + 1}. ${r.name}</b><span class="small">${cleared ? '✓ ' : ''}${r.boss.name} · lvl ${stageLevel(first)}-${stageLevel(first + 9)}</span></button>`;
+  }).join('');
+  view.innerHTML = `${busy ? `<div class="panel warn">You're in ${runTitle(state.run)}. <button class="btn small danger" data-act="leave">Leave</button></div>` : ''}
+    <div class="panel"><h3>World map <span class="muted small">${WORLD_TIERS[state.worldTier].name}</span></h3><div class="regions">${regions}</div>
+      <div class="tiers">${WORLD_TIERS.map((w, i) => `<button class="btn small ${state.worldTier === i ? 'primary' : ''}" data-act="tier" data-i="${i}" ${i > state.maxWorldTier ? 'disabled' : ''} style="color:${w.color}">${w.name}</button>`).join('')}</div></div>
+    ${card('dungeon', `<div class="dungeons">${DUNGEON_KEYS.map((k) => { const d = DUNGEONS[k], t = state.dungeonTier[k] || 1; return `<div class="dun"><div><b>${d.icon} ${d.name}</b><div class="small muted">${d.text} · ${d.slots ? d.slots.map((s) => SLOT_INFO[s].name).join(', ') : 'any slot'}</div></div>
+      <div class="col"><select data-dtier="${k}">${Array.from({ length: t }, (_, i) => t - i).map((n) => `<option value="${n}">Tier ${n} (lvl ${runLevel(state, 'dungeon', k, n)})</option>`).join('')}</select><button class="btn small" data-act="runDungeon" data-k="${k}" ${dis}>Enter</button></div></div>`; }).join('')}</div>`)}
+    ${card('caverns', `<button class="btn small" data-act="run" data-k="caverns" ${dis}>Enter (lvl ${runLevel(state, 'caverns')})</button>`)}
+    ${card('vault', `<button class="btn small" data-act="run" data-k="vault" ${dis}>Enter</button>`)}
+    ${card('tower', `<div class="small">Best floor <b>${state.towerBest}</b> · next milestone floor ${state.towerClaimed + 10}</div><div class="row2"><button class="btn small" data-act="tower" data-f="1" ${dis}>Start at floor 1</button>${state.towerBest > 10 ? `<button class="btn small" data-act="tower" data-f="${Math.floor(state.towerBest / 10) * 10 - 9}" ${dis}>Start at floor ${Math.floor(state.towerBest / 10) * 10 - 9}</button>` : ''}</div>`)}
+    ${card('bossrush', `<div class="small">${Object.keys(state.bossesBeaten).length} bosses unlocked · best streak ${state.rushBest}</div><button class="btn small" data-act="run" data-k="bossrush" ${dis || (Object.keys(state.bossesBeaten).length ? '' : 'disabled')}>Start</button>`)}
+    ${card('rift', `<div class="small">Highest rift ${state.riftBest} · each rift rolls 2-3 random modifiers (some help you, harder ones give more loot)</div><div class="row2"><select data-rtier>${Array.from({ length: state.riftLevel }, (_, i) => state.riftLevel - i).map((n) => `<option value="${n}">Rift ${n} (lvl ${runLevel(state, 'rift', null, n)})</option>`).join('')}</select><button class="btn small" data-act="runRift" ${dis}>Open rift</button></div>`)}
+    <div class="panel"><div class="attr"><span>Auto-repeat activities after a win</span><button class="btn small toggle ${state.autoRepeat ? 'on' : ''}" data-act="autoRepeat">${state.autoRepeat ? 'On' : 'Off'}</button></div><div class="small muted">No energy, no timers: run anything as often as you like.</div></div>`;
+}
+
+// ---------------- run report ----------------
+function runReport(r) {
+  const s = st();
+  const c = state.combat;
+  const hpLeft = c ? c.hero.hp / c.st.hp : 0;
+  let verdict, advice;
+  if (!r.win && r.kind !== 'tower') { verdict = 'Defeated.'; advice = r.kind === 'dungeon' || r.kind === 'rift' ? 'Try a lower tier, Optimise, or farm the campaign for gear and levels.' : 'Optimise and level up, then try again.'; }
+  else if (r.kind === 'tower') { verdict = `Reached floor ${r.floor}.`; advice = state.towerBest >= r.floor - 1 ? 'Milestones pay out every 10 floors.' : ''; }
+  else if (hpLeft > 0.85 && r.t < r.waves * 4) { verdict = 'Too easy.'; advice = 'You barely got scratched. Go up a tier for better loot.'; }
+  else if (hpLeft < 0.3) { verdict = 'Close call!'; advice = 'Farm this tier a little more before pushing.'; }
+  else { verdict = 'Solid clear.'; advice = 'This tier is a good fit. Push one higher when your Power grows.'; }
+  const loot = r.loot.map(({ it, res }) => `<div style="color:${rc(it.rarity)}">${esc(it.name)} <span class="muted small">${res === 'equipped' ? '✓ equipped' : res === 'salvaged' ? 'salvaged' : 'to bag'}</span></div>`).join('');
+  const mats = Object.entries(r.mats).filter(([, v]) => v).map(([k, v]) => `${MATERIALS[k].icon} ${MATERIALS[k].name} x${fmt(v)}`).join('<br>');
+  const next = (r.kind === 'dungeon' || r.kind === 'rift') && r.win;
+  modal(`<div class="mhead">${r.win || r.kind === 'tower' ? '🏆' : '💀'} ${runTitle(r)}</div><div class="verdict ${r.win ? 'good' : 'bad'}">${verdict}</div><div class="small">${advice}</div>
+    <div class="small muted">Time ${Math.round(r.t)}s · gold ${fmt(r.gold)}</div>
+    ${loot ? `<h3>Loot</h3>${loot}` : ''}${mats ? `<h3>Materials</h3><div class="small">${mats}</div>` : ''}
+    ${r.gems.length ? `<h3>Gems</h3><div>${r.gems.map((g) => GEMS[g.slice(0, -1)].icon).join(' ')}</div>` : ''}
+    ${r.ins.length ? `<h3>Inscriptions</h3>${r.ins.map((i) => `<div class="small">${INSCR_TAGS[i.tag].icon} ${statLine(i.stat, i.v)}</div>`).join('')}` : ''}
+    <div class="row2">${next ? `<button class="btn primary" data-act="again" data-up="1">Next tier</button>` : ''}<button class="btn" data-act="again">Again</button><button class="btn" data-act="optimise">Optimise</button><button class="btn" data-act="close">Back to campaign</button></div>`);
+}
+let lastRun = null;
+function repeatRun(up) {
+  const r = lastRun; if (!r) return;
+  closeModal();
+  if (state.run) leaveRun(state);
+  const tier = r.kind === 'tower' ? 1 : up ? r.tier + 1 : r.tier;
+  startRun(state, r.kind, r.key, r.kind === 'dungeon' ? Math.min(tier, state.dungeonTier[r.key]) : r.kind === 'rift' ? Math.min(tier, state.riftLevel) : tier);
+  switchTab('battle');
+}
+
+// ---------------- events from the engine ----------------
+function drainEvents() {
+  const c = state.combat; if (!c || !c.events.length) return;
+  const evs = c.events.splice(0);
+  for (const e of evs) {
+    if (tab === 'battle') arena.onEvent(e, state);
     switch (e.t) {
-      case 'skillUnlock': toast(`✴️ ${heroName(e.hero)} learned ${e.sk.icon} ${e.sk.name}`); break;
-      case 'key': toast(`🗝️ Vault Key${e.first ? ' (first kill)' : ''}`); break;
-      case 'egg': toast('🥚 Pet Egg found!'); break;
-      case 'stone': toast(`💎 ${e.stone.name} (T${e.stone.tier}, +${e.stone.power}%)`); break;
-      case 'phase': toast(`🔱 Phase ${e.phase}!`); break;
-      case 'room': if (e.room > DUNGEON.rooms) toast('💀 The Warden awakens'); break;
-      case 'heroDown': toast(`💀 ${heroName(e.i)} is down!`); break;
-      case 'phoenix': toast(`🔥 Phoenix revives ${heroName(e.i)}!`); break;
-      case 'runEnd': structural = true; battleDirty = true; showRunEnd(e); break;
-      case 'level':
-        toast(`⭐ Level ${e.level}! +1 passive point for each hero`); structural = true; battleDirty = true;
-        if (state.settings.autoOptimise && partyReady(state)) { optimiseAll(state); }
+      case 'loot':
+        lootLog.unshift(e); if (lootLog.length > 6) lootLog.pop(); refreshLootLog();
+        if (e.rarity >= 4) { toast(`<b style="color:${rc(e.rarity)}">${RARITIES[e.rarity].name}!</b> ${esc(e.name)}`, 'big'); sfx('loot'); }
         break;
-      case 'stage': structural = true; battleDirty = true; if (isBossStage(e.stage)) toast(`👑 Boss: ${zoneFor(e.stage).bossName}`); break;
-      case 'death': toast('☠️ Party wiped. Falling back a stage.'); structural = true; battleDirty = true; break;
-      case 'equip': toast(`▲ ${ROLES[roleOf(e.hero)].icon} <span class="${nc(e.item)}">${e.item.name}</span> <span class="good">+${(e.gain * 100).toFixed(1)}%</span>`); structural = true; break;
-      case 'loot': if (e.item.rarity >= 3 || e.item.set) toast(`<span class="${nc(e.item)}">${e.item.set ? 'Set' : e.item.mythic ? '✦ Mythic' : RARITIES[e.item.rarity].name}: ${e.item.name}</span>`); structural = true; break;
-      case 'kill': if (tab === 'battle') renderFeed(); break;
+      case 'level':
+        for (const u of e.ups) {
+          if (typeof u === 'number') { toast(`⬆ Level ${u}`); sfx('level'); }
+          else if (u === 'mastery') toast('✦ Mastery up');
+          else toast(`🔓 ${u.text}`, 'big');
+        }
+        if (state.settings.autoOptimise) optimiseAll(state);
+        refreshGoals();
+        break;
+      case 'companion': toast(`🐾 New companion: ${COMPANIONS[e.id].name}!`, 'big'); break;
+      case 'worldTier': toast(`🌍 World Tier ${WORLD_TIERS[e.tier].name} unlocked!`, 'big'); break;
+      case 'stageClear': refreshGoals(); break;
+      case 'kill': if (e.boss) sfx('boss'); break;
+      case 'hit': if (e.crit && Math.random() < 0.1) sfx('crit'); break;
+      case 'death': sfx('hurt'); break;
+      case 'runEnd':
+        lastRun = { ...e.run };
+        if (state.autoRepeat && e.win && e.run.kind !== 'tower') { const r = e.run; setTimeout(() => { if (state.run === r) { leaveRun(state); startRun(state, r.kind, r.key, r.tier); if (tab === 'battle') renderBattle(); } }, 1200); toast(`🏆 ${runTitle(r)} cleared — repeating`); }
+        else setTimeout(() => { const r = state.run; runReport(e.run); if (r === e.run) leaveRun(state); if (tab === 'battle') renderBattle(); }, 900);
+        break;
     }
   }
-  if (tab === 'battle' && !document.hidden) {
-    state._zoneBg = zoneFor(state.stage).bg;
-    for (const e of ev) { try { arena.onEvent(e, state); } catch (err) { console.warn(err); } }
-    arena.frame(dt, state);
-  }
-  ev.length = 0;
-  if (structural) dirtyAt = now;
-  if (dirtyAt > lastRender && now - lastRender > 700 && $('#modal').classList.contains('hidden')) {
-    lastRender = now;
-    if (tab === 'battle') { if (battleDirty) { battleDirty = false; renderBattle(); } else renderFeed(); }
-    else if (tab === 'bag' || tab === 'events') render(); else renderHud();
-  }
-  renderHud();
-  updateBattle();
-  if (Date.now() - lastSave > 10000) { save(state); lastSave = Date.now(); }
-  requestAnimationFrame(frame);
 }
 
-// ---------- Offline progress ----------
-function offlineCatchUp() {
-  const away = (Date.now() - (state.lastSave || Date.now())) / 1000;
-  if (away < 30 || !partyReady(state)) return;
-  const secs = Math.min(away, 8 * 3600);
-  const r = simulate(state, secs, 0.25);
-  save(state);
-  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
-  $('#modal-card').innerHTML = `<h2>While you were away</h2>
-    <p class="muted">${h ? h + 'h ' : ''}${m}m of fighting${away > secs ? ' (8h max)' : ''}</p>
-    <div class="sheet">
-      <span>Monsters slain</span><b>${fmt(r.kills)}</b>
-      <span>Gold</span><b>🪙 ${fmt(r.gold)}</b>
-      <span>Shards</span><b>💠 ${fmt(r.shards)}</b>
-      <span>Levels gained</span><b>${r.levels}</b>
-      <span>New best stage</span><b>${r.stages > 0 ? '+' + r.stages : '—'}</b>
-      <span>Upgrades equipped</span><b>${r.equips}</b>
-    </div>
-    <div class="actions"><button class="btn primary full" data-act="close">Continue</button></div>`;
-  modalCtx = null;
-  $('#modal').classList.remove('hidden');
+// ---------------- tabs & actions ----------------
+function switchTab(t) {
+  tab = t;
+  for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === t);
   render();
+  view.scrollTop = 0;
 }
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) save(state);
-  else { offlineCatchUp(); last = performance.now(); }
+function render() {
+  if (tab === 'battle') renderBattle();
+  else if (tab === 'character') renderCharacter();
+  else if (tab === 'equipment') renderEquipment();
+  else if (tab === 'skills') renderSkills();
+  else if (tab === 'activities') renderActivities();
+  hud();
+}
+function rerender() { const y = view.scrollTop; render(); view.scrollTop = y; }
+
+function doOptimise() {
+  const r = optimiseAll(state);
+  refreshStats(state);
+  toast(`⚡ Power ${fmt(r.before)} → <b>${fmt(r.after)}</b>${r.spent ? ` · ${r.spent} upgrades` : ''}`);
+}
+
+document.addEventListener('click', (ev) => {
+  const el = ev.target.closest('[data-act]');
+  if (!el || el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
+  const a = el.dataset.act, d = el.dataset;
+  const findItem = (id) => state.bag.find((x) => x.id === id) || SLOTS.map((s) => state.gear[s]).find((x) => x && x.id === id);
+  let keepModal = false;
+  switch (a) {
+    case 'tab': closeModal(); switchTab(d.tab); return;
+    case 'sub': sub[d.t] = d.k; rerender(); return;
+    case 'close': closeModal(); return;
+    case 'stage': setStage(state, state.stage + +d.d); state.retryIn = 0; if (+d.d < 0) state.autoAdvance = false; renderBattle(); return;
+    case 'auto': state.autoAdvance = !state.autoAdvance; state.retryIn = 0; renderBattle(); return;
+    case 'leave': leaveRun(state); closeModal(); switchTab('battle'); return;
+    case 'optimise': doOptimise(); closeModal(); rerender(); return;
+    case 'gotoSkills': switchTab('skills'); return;
+    case 'spec': if (!sys.chooseSpec(state, d.id)) toast(state.level < 10 ? 'Specs unlock at level 10' : 'Not enough gold to respec'); break;
+    case 'talent': if (!sys.addTalent(state, d.tree, +d.i)) toast('Can\'t add a point there'); state.manualTalents = true; break;
+    case 'autoTalents': sys.autoTalents(state, true); break;
+    case 'resetTalents': if (!sys.resetTalents(state)) toast('Not enough gold'); break;
+    case 'attr': state.attrs[d.k]++; sys.dirty(state); break;
+    case 'autoAttrs': sys.autoAttrs(state); break;
+    case 'resetAttrs': sys.resetAttrs(state); break;
+    case 'compLvl': if (!sys.levelCompanion(state, d.id)) toast('Not enough resources'); break;
+    case 'compSet': sys.setCompanion(state, d.id, d.w === 'active' ? 'active' : +d.w); break;
+    case 'tier': state.worldTier = +d.i; sys.dirty(state); if (!state.run) setStage(state, state.stage); toast(`World Tier: ${WORLD_TIERS[state.worldTier].name}`); break;
+    case 'ascend': if (confirm('Ascend? You return to level 1 and stage 1-1 but keep your gear, gems, runes, companions and materials.')) { sys.ascend(state); if (state.combat) { state.combat.enemies = []; state.combat.wave = 0; } refreshStats(state); toast('✦ Ascended!', 'big'); } break;
+    case 'perk': sys.buyPerk(state, d.k); break;
+    case 'item': itemModal(d.id); return;
+    case 'filterSlot': bagFilter.slot = d.slot === 'ring2' ? 'ring1' : d.slot; sub.equipment = 'bag'; rerender(); return;
+    case 'equip': { const it = findItem(d.id); if (it) sys.equip(state, it, d.slot); closeModal(); break; }
+    case 'unequip': sys.unequip(state, d.slot); closeModal(); break;
+    case 'lock': { const it = findItem(d.id); if (it) it.locked = !it.locked; itemModal(d.id); keepModal = true; break; }
+    case 'salvage': { const it = findItem(d.id); if (it) { const v = sys.salvage(state, it); if (v) toast('Salvaged: ' + Object.entries(v).map(([k, n]) => `${k === 'gold' ? '🪙' : MATERIALS[k].icon}${fmt(n)}`).join(' ')); } closeModal(); break; }
+    case 'enh': case 'ref': case 'ench': case 'awk': {
+      const it = findItem(d.id); if (!it) return;
+      const fn = { enh: sys.enhance, ref: sys.refine, ench: sys.enchant, awk: sys.awakenItem }[a];
+      if (!fn(state, it)) toast('Not enough resources'); itemModal(d.id); keepModal = true; break;
+    }
+    case 'unsock': { const it = findItem(d.id); if (it) sys.unsocket(state, it, +d.i); itemModal(d.id); keepModal = true; break; }
+    case 'keepUniq': state.filters.keepUniques = !state.filters.keepUniques; break;
+    case 'autoEquip': state.filters.autoEquip = !state.filters.autoEquip; break;
+    case 'keepAff': { const k = state.filters.keepAffixes; const i = k.indexOf(d.k); if (i >= 0) k.splice(i, 1); else k.push(d.k); break; }
+    case 'salvAll': { const n = sys.salvageAll(state, +d.r); toast(`Salvaged ${n} items`); break; }
+    case 'gemCombine': if (!sys.combineGems(state, d.g, +d.t)) toast('Need 3 of that gem (and gold)'); break;
+    case 'gemAll': toast(`Combined ${sys.combineAllGems(state)} times`); break;
+    case 'rune': if (!sys.upgradeRune(state, d.k)) toast('Not enough resources'); break;
+    case 'runeEq': { const free = state.runesEquipped.findIndex((x, i) => !x && i < runeSlots(state)); sys.equipRune(state, free >= 0 ? free : 0, d.k); break; }
+    case 'inscribe': {
+      const ins = state.inscriptions.find((x) => x.id === d.id); if (!ins) return;
+      let idx = state.inscribed.findIndex((x) => !x);
+      if (idx < 0) { let lo = 1e18; state.inscribed.forEach((x, i) => { if (x.v < lo) { lo = x.v; idx = i; } }); }
+      sys.inscribe(state, idx, ins); break;
+    }
+    case 'uninscribe': sys.uninscribe(state, +d.i); break;
+    case 'craft': {
+      const sel = document.querySelector(`[data-recipe-slot="${d.id}"]`);
+      const res = sys.craft(state, d.id, sel ? sel.value : undefined);
+      if (!res) toast('Missing materials');
+      else if (res.item) { toast(`Crafted <b style="color:${rc(res.item.rarity)}">${esc(res.item.name)}</b>`, 'big'); itemModal(res.item.id); keepModal = true; }
+      else if (res.gem) toast(`Cut a ${GEMS[res.gem.slice(0, -1)].name}`);
+      else if (res.ins) toast(`Carved a ${INSCR_TAGS[res.ins.tag].name} inscription`);
+      break;
+    }
+    case 'setSkill': sys.setSkill(state, d.role, d.id); break;
+    case 'skUp': if (!sys.upgradeSkill(state, d.id)) toast('Not enough resources'); break;
+    case 'skAwk': if (!sys.awakenSkill(state, d.id)) toast('Needs rank 10, level 70 and materials'); break;
+    case 'ruleDef': state.rules.saveDef = !state.rules.saveDef; break;
+    case 'goRegion': { if (state.run) leaveRun(state); const first = +d.i * 10 + 1; setStage(state, Math.min(state.maxStage, first + 9)); state.autoAdvance = state.maxStage <= first + 9; switchTab('battle'); return; }
+    case 'runDungeon': { const t = +document.querySelector(`[data-dtier="${d.k}"]`).value; if (startRun(state, 'dungeon', d.k, t)) switchTab('battle'); return; }
+    case 'run': if (startRun(state, d.k)) switchTab('battle'); else toast('Beat a region boss first'); return;
+    case 'tower': if (startRun(state, 'tower', null, +d.f)) switchTab('battle'); return;
+    case 'runRift': { const t = +document.querySelector('[data-rtier]').value; if (startRun(state, 'rift', null, t)) switchTab('battle'); return; }
+    case 'autoRepeat': state.autoRepeat = !state.autoRepeat; break;
+    case 'again': repeatRun(!!d.up); return;
+    case 'settings': settingsModal(); return;
+    case 'set': { const k = d.k; const v = d.v; state.settings[k] = v === 'true' ? true : v === 'false' ? false : isNaN(+v) ? v : +v; applySettings(); settingsModal(); return; }
+    case 'export': { const txt = btoa(unescape(encodeURIComponent(JSON.stringify({ ...state, combat: null, _st: null })))); navigator.clipboard?.writeText(txt); prompt('Your save (copied):', txt); return; }
+    case 'import': { const txt = prompt('Paste a save:'); if (txt) { try { const s = JSON.parse(decodeURIComponent(escape(atob(txt.trim())))); localStorage.setItem(sys.SAVE_KEY, JSON.stringify(s)); location.reload(); } catch (e) { alert('That save could not be read.'); } } return; }
+    case 'newGame': if (confirm('Start a new hero? This erases your current save.')) { localStorage.removeItem(sys.SAVE_KEY); location.reload(); } return;
+    case 'pickClass': state = sys.newState(d.cls); window.__state = state; ensureCombat(state); applySettings(); sys.save(state); closeModal(); switchTab('battle'); return;
+  }
+  sys.dirty(state);
+  if (!keepModal && a !== 'item') { /* keep modal closed */ }
+  rerender();
 });
-window.addEventListener('pagehide', () => save(state));
-window.addEventListener('resize', () => arena.resize());
+document.addEventListener('change', (ev) => {
+  const el = ev.target, a = el.dataset.act;
+  if (a === 'bagSlot') { bagFilter.slot = el.value; rerender(); }
+  else if (a === 'bagRar') { bagFilter.rarity = +el.value; rerender(); }
+  else if (a === 'salvBelow') { state.filters.salvageBelow = +el.value; }
+  else if (a === 'rule') { state.rules[el.dataset.k] = el.dataset.k === 'aoeMin' ? +el.value : el.value; }
+  else if (a === 'ruleHeal') { state.rules.heal = +el.value; }
+  else if (a === 'sock') { const it = state.bag.find((x) => x.id === el.dataset.id) || SLOTS.map((s) => state.gear[s]).find((x) => x && x.id === el.dataset.id); if (it && el.value) sys.socketGem(state, it, +el.dataset.i, el.value); itemModal(el.dataset.id); }
+});
+document.addEventListener('input', (ev) => { if (ev.target.dataset.act === 'ruleHeal') { const v = $('#ruleHealV'); if (v) v.textContent = ev.target.value + '%'; state.rules.heal = +ev.target.value; } });
+$('#modal').addEventListener('click', (ev) => { if (ev.target.id === 'modal') closeModal(); });
+for (const b of document.querySelectorAll('#tabs button')) b.addEventListener('click', () => switchTab(b.dataset.tab));
 
-render();
-if (state.migrated) {
-  delete state.migrated;
-  setTimeout(() => toast('⚔️ Your hero now leads a party of three! Pick classes for your new allies.'), 300);
+function settingsModal() {
+  const S = state.settings;
+  const opt = (k, list) => `<div class="seg">${list.map(([v, n]) => `<button class="${String(S[k]) === String(v) ? 'on' : ''}" data-act="set" data-k="${k}" data-v="${v}">${n}</button>`).join('')}</div>`;
+  modal(`<div class="mhead">Settings</div>
+    <div class="rule"><span>Combat speed</span>${opt('speed', [[1, '1x'], [1.5, '1.5x'], [2, '2x']])}</div>
+    <div class="rule"><span>Damage numbers</span>${opt('dmgNums', [['all', 'All'], ['crits', 'Big only'], ['off', 'Off']])}</div>
+    <div class="rule"><span>Screen shake</span>${opt('shake', [[true, 'On'], [false, 'Off']])}</div>
+    <div class="rule"><span>Effects</span>${opt('effects', [['full', 'Full'], ['reduced', 'Reduced']])}</div>
+    <div class="rule"><span>Sound</span>${opt('sound', [[true, 'On'], [false, 'Off']])}</div>
+    <div class="rule"><span>Text size</span>${opt('text', [['s', 'S'], ['m', 'M'], ['l', 'L']])}</div>
+    <div class="rule"><span>Colour-safe statuses</span>${opt('colorSafe', [[true, 'On'], [false, 'Off']])}</div>
+    <div class="rule"><span>Auto-optimise on level up</span>${opt('autoOptimise', [[true, 'On'], [false, 'Off']])}</div>
+    <div class="row2"><button class="btn small" data-act="export">Export save</button><button class="btn small" data-act="import">Import save</button><button class="btn small danger" data-act="newGame">New hero</button></div>
+    <div class="small muted">Eternal Ascent ${VERSION}. No energy, no loot boxes, no paid power. Offline progress caps at 12 hours.</div>
+    <button class="btn" data-act="close">Close</button>`);
 }
-if (state.treeReset) { delete state.treeReset; setTimeout(() => toast('🌳 The passive tree was redesigned. All points refunded!'), 1200); }
-if (ensureParty()) offlineCatchUp();
-requestAnimationFrame(frame);
+function classPicker() {
+  modal(`<div class="mhead">Choose your hero</div><div class="small muted">One hero, three specialisations each. You can start a new hero later from Settings.</div>
+    <div class="classes">${CLASS_KEYS.map((k) => { const c = CLASSES[k]; return `<button class="cls" data-act="pickClass" data-cls="${k}" style="border-color:${c.color}"><img src="assets/heroes/${c.art}.webp" alt=""><div><b>${c.icon} ${c.name}</b><div class="small">${c.specs.map((s) => s.name).join(' · ')}</div><div class="small muted">${c.dmg === 'phys' ? 'Physical' : 'Magic'} · ${c.res}</div></div></button>`; }).join('')}</div>`, 'wide');
+}
+function offlineModal(rep) {
+  const h = Math.floor(rep.secs / 3600), m = Math.floor((rep.secs % 3600) / 60);
+  const mats = Object.entries(rep.mats).filter(([, v]) => v).map(([k, v]) => `${MATERIALS[k].icon}${fmt(v)}`).join(' ');
+  modal(`<div class="mhead">While you were away</div>
+    <div class="small">${h}h ${m}m simulated${rep.capped ? ' <b>(capped at 12h)</b>' : ''} at stage <b>${stageName(rep.stage)}</b> in ${rep.region}.</div>
+    <div class="kv"><div>Monsters killed</div><b>${fmt(rep.kills)}</b><div>Gold</div><b>🪙${fmt(rep.gold)}</b><div>Experience</div><b>${fmt(rep.xp)}</b><div>Levels gained</div><b>${rep.levels}</b>
+    <div>Items</div><b>${rep.equipped} equipped · ${rep.kept} kept · ${rep.salvaged} salvaged</b>${mats ? `<div>Materials</div><b>${mats}</b>` : ''}</div>
+    <div class="small muted">Measured from a real 90-second sample of your current stage, then scaled up. Items are capped at 40 per absence.</div>
+    <button class="btn primary" data-act="close">Continue</button>`);
+}
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  // when a new version takes over, reload once so the new files are used
-  let reloaded = false;
-  const hadController = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloaded || !hadController) return;
-    reloaded = true; save(state); location.reload();
-  });
+// ---------------- main loop ----------------
+let last = performance.now(), acc = 0, saveT = 0, uiT = 0;
+function loop(now) {
+  const dt = Math.min(0.25, (now - last) / 1000); last = now;
+  if (state) {
+    acc += dt * (state.settings.speed || 1);
+    let steps = 0;
+    while (acc >= 0.05 && steps < 20) { tick(state, 0.05); acc -= 0.05; steps++; }
+    if (steps >= 20) acc = 0;
+    drainEvents();
+    if (tab === 'battle') {
+      const reg = state.run ? (state.run.kind === 'dungeon' ? DUNGEONS[state.run.key].bg : { caverns: 'caverns', vault: 'pyramid', bossrush: 'raid', tower: 'tower', rift: 'rift' }[state.run.kind]) : REGIONS[regionOf(state.stage)].bg;
+      arena.setScene(reg, state.run ? (state.run.kind === 'rift' ? 'sparkles' : 'embers') : REGIONS[regionOf(state.stage)].weather);
+      arena.resize(); arena.frame(dt, state); battleTick();
+    }
+    uiT += dt; if (uiT > 1) { uiT = 0; hud(); if (tab === 'battle') refreshGoals(); }
+    saveT += dt; if (saveT > 10) { saveT = 0; sys.save(state); }
+  }
+  requestAnimationFrame(loop);
+}
+window.addEventListener('visibilitychange', () => {
+  if (!state) return;
+  if (document.hidden) sys.save(state);
+  else {
+    const away = (Date.now() - state.lastSeen) / 1000;
+    if (away > 120 && !state.run) { const rep = simulateOffline(state, away); state.lastSeen = Date.now(); if (rep) { refreshStats(state); offlineModal(rep); } }
+  }
+});
+window.addEventListener('beforeunload', () => state && sys.save(state));
+window.addEventListener('resize', () => arena.resize());
+$('#hud-settings').addEventListener('click', settingsModal);
+
+// boot
+if (state) {
+  window.__state = state;
+  applySettings();
+  ensureCombat(state);
+  const away = (Date.now() - (state.lastSeen || Date.now())) / 1000;
+  const rep = away > 120 ? simulateOffline(state, away) : null;
+  refreshStats(state);
+  switchTab('battle');
+  if (rep) offlineModal(rep);
+} else {
+  state = sys.newState('warrior'); window.__state = state; ensureCombat(state); applySettings();
+  switchTab('battle');
+  classPicker();
+}
+requestAnimationFrame(loop);
+if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => r.update()).catch(() => {});
+  let reloaded = false;
+  const hadController = !!navigator.serviceWorker.controller;   // first install: don't reload (it would skip the class picker)
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloaded) { reloaded = true; location.reload(); } });
 }

@@ -3,46 +3,41 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <meta name="theme-color" content="#0d0b09">
+  <meta name="theme-color" content="#0b0a10">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Exile Idle: Party of Legends</title>
+  <title>Eternal Ascent</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Fontin+Sans&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=ea2">
 </head>
 <body>
   <header id="hud">
     <div class="hud-row">
-      <div class="lvl">Lv <b id="hud-level">1</b></div>
+      <div class="lvl"><span id="hud-cls"></span> Lv <b id="hud-level">1</b></div>
       <div class="bar xp"><div id="hud-xp" class="fill"></div><span id="hud-xp-text"></span></div>
+      <button id="hud-settings" aria-label="Settings">⚙️</button>
     </div>
     <div class="hud-row currencies">
       <span>🪙 <b id="hud-gold">0</b></span>
-      <span>💠 <b id="hud-shards">0</b></span>
-      <span>🏅 <b id="hud-emblems">0</b></span>
       <span>⚡ <b id="hud-power">0</b></span>
+      <span><b id="hud-tier">Normal</b> <b id="hud-asc" class="asc"></b></span>
     </div>
   </header>
-
   <main id="view"></main>
-
   <nav id="tabs">
     <button data-tab="battle" class="active"><span>⚔️</span>Battle</button>
-    <button data-tab="heroes"><span>🛡️</span>Heroes<i id="tree-badge"></i></button>
-    <button data-tab="bag"><span>🎒</span>Bag<i id="bag-badge"></i></button>
-    <button data-tab="pets"><span>🐾</span>Pets<i id="pet-badge"></i></button>
-    <button data-tab="events"><span>🏰</span>Events<i id="end-badge"></i></button>
-    <button data-tab="more"><span>📜</span>Stats</button>
+    <button data-tab="character"><span>🧝</span>Character<i id="badge-character"></i></button>
+    <button data-tab="equipment"><span>🛡️</span>Equipment<i id="badge-equipment"></i></button>
+    <button data-tab="skills"><span>✨</span>Skills</button>
+    <button data-tab="activities"><span>🗺️</span>Activities</button>
   </nav>
-
   <div id="modal" class="hidden"><div class="modal-card" id="modal-card"></div></div>
   <div id="toasts"></div>
-
-  <script type="module" src="js/main.js?v=20261123e"></script>
+  <script type="module" src="js/main.js?v=ea2"></script>
 </body>
 </html>
