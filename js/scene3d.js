@@ -17,6 +17,14 @@ const HERO = {
   mage: { file: 'mage', keep: ['2H_Staff'], atk: ['Spellcast_Shoot'], aoe: 'Spellcast_Raise', ranged: true },
   warlock: { file: 'mage', keep: ['2H_Staff', 'Spellbook_open'], atk: ['Spellcast_Shoot'], aoe: 'Spellcast_Raise', ranged: true, tint: 0x9a70c8 },
 };
+// bosses as oversized, recoloured 3D models: [file, tint, visible weapons, extra skeleton weapons]
+const BOSS3D = {
+  thornmother: ['barbarian', 0x7ac05a, ['2H_Axe']], rockgolem: ['skel_warrior', 0xa8a49a, [], ['Skeleton_Axe', 'Skeleton_Shield_Large_B']],
+  lich: ['skel_mage', 0xffd870, [], ['Skeleton_Staff']], forgetyrant: ['barbarian', 0xff7a4a, ['2H_Axe']], icesovereign: ['mage', 0x9adcff, ['2H_Staff']],
+  dragon: ['skel_warrior', 0xd0503a, [], ['Skeleton_Axe']], shadowlord: ['knight', 0x6a4a9a, ['2H_Sword']], kraken: ['skel_rogue', 0x40c8b8, [], ['Skeleton_Blade']],
+  voidtitan: ['skel_warrior', 0x9a5ae8, [], ['Skeleton_Axe', 'Skeleton_Shield_Large_B']], eternalone: ['knight', 0xffd060, ['2H_Sword']],
+  sungolem: ['skel_warrior', 0xffd040, [], ['Skeleton_Shield_Large_B']],
+};
 const WEAPONISH = /Sword|Axe|Shield|Wand|Staff|Spellbook|Crossbow|Knife|Throwable|Mug/;
 // painted monster -> skeleton variant
 const BRUTES = new Set(['troll', 'rockgolem', 'yeti', 'magmagolem', 'sungolem', 'treant', 'ram', 'crabknight', 'dknight', 'demonlord', 'flesh']);
@@ -40,8 +48,8 @@ const THEMES = {
   hellfire: T({ desat: true, floor: 'outdoor:hex_grass', tint: 0x5a3a30, ground: 0x2a1410, sky: 0x2a0c06, fog: 0x5a2010, sun: 0xff9a60, props: ['outdoor:rock_single_A', 'outdoor:rock_single_E', 'spooky:tree_dead_large', 'spooky:tree_dead_medium', 'outdoor:mountain_A', 'spooky:ribcage'], propTint: 0x6a4038 }),
   prison: T({ floor: 'spooky:floor_dirt', tint: 0x6a5a8a, ground: 0x241a30, sky: 0x140c1c, fog: 0x2a1a3a, sun: 0xb8a0ff, props: ['spooky:grave_A', 'spooky:crypt', 'spooky:tree_dead_large', 'spooky:pillar', 'spooky:arch', 'spooky:shrine_candles', 'spooky:lantern_standing'] }),
   harbour: T({ desat: true, floor: 'outdoor:hex_grass', tint: 0xe8d8a8, ground: 0x3a6a7a, sky: 0x8ab8c8, fog: 0x7aa8b8, sun: 0xe0f0ff, props: ['outdoor:waterplant_A', 'outdoor:barrel', 'outdoor:crate_A_big', 'outdoor:rock_single_A', 'outdoor:building_destroyed'], water: true }),
-  rift: T({ floor: 'dungeon:floor_tile_large', tint: 0x8a6ad0, ground: 0x1a0a2a, sky: 0x0a0414, fog: 0x2a0a4a, sun: 0xc8a0ff, props: ['dungeon:column', 'spooky:arch', 'spooky:pillar', 'outdoor:rock_single_E'], propTint: 0x9a7ad8 }),
-  spire: T({ floor: 'dungeon:floor_tile_large', tint: 0xfff0c8, ground: 0x8a7a5a, sky: 0xf0e0c0, fog: 0xf0e4c8, sun: 0xfff4d0, props: ['dungeon:column', 'dungeon:banner_patternA_white', 'spooky:arch', 'spooky:shrine_candles', 'spooky:pillar'] }),
+  rift: T({ floor: 'dungeon:floor_tile_large', tint: 0xb59af0, ground: 0x2a1a40, sky: 0x140a24, fog: 0x3a1a5a, sun: 0xe0c8ff, props: ['dungeon:column', 'spooky:arch', 'spooky:pillar', 'outdoor:rock_single_E'], propTint: 0x9a7ad8 }),
+  spire: T({ desat: true, floor: 'dungeon:floor_tile_large', tint: 0xf4e6c4, ground: 0x8a7a5a, sky: 0xf0e0c0, fog: 0xf0e4c8, sun: 0xfff4d0, props: ['dungeon:column', 'dungeon:banner_patternA_white', 'spooky:arch', 'spooky:shrine_candles', 'spooky:pillar'] }),
   dungeon: T({ floor: 'dungeon:floor_tile_large', tint: 0xb0a898, ground: 0x2a2620, sky: 0x100c08, fog: 0x2a2018, sun: 0xffd0a0, props: ['dungeon:column', 'dungeon:torch_lit', 'dungeon:barrier', 'spooky:coffin', 'dungeon:banner_red'] }),
   lair: T({ floor: 'dungeon:floor_tile_small_broken_A', tint: 0x9a6048, ground: 0x2a120a, sky: 0x1a0804, fog: 0x4a1a0a, sun: 0xff9050, props: ['outdoor:rock_single_A', 'outdoor:rock_single_E', 'spooky:ribcage', 'spooky:skull', 'dungeon:torch_lit'] }),
   caverns: T({ floor: 'dungeon:floor_dirt_small_weeds', tint: 0x80c0c0, ground: 0x1a3030, sky: 0x081414, fog: 0x1a4040, sun: 0xa0ffff, props: ['outdoor:rock_single_A', 'outdoor:rock_single_C', 'outdoor:rock_single_E', 'dungeon:torch_lit'], propTint: 0x90d8e0 }),
@@ -73,7 +81,7 @@ export class Scene3D {
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x404040, 1.1); this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight(0xffffff, 1.5);
     this.sun.castShadow = true; this.sun.shadow.mapSize.set(1024, 1024);
-    const sc = this.sun.shadow.camera; sc.left = -16; sc.right = 16; sc.top = 16; sc.bottom = -16; sc.near = 1; sc.far = 80;
+    const sc = this.sun.shadow.camera; sc.left = -20; sc.right = 20; sc.top = 20; sc.bottom = -20; sc.near = 1; sc.far = 80;
     this.sun.shadow.bias = -0.0015; this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun); this.scene.add(this.sun.target);
     this.groundPlane = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial({ color: 0x406030 }));
@@ -121,7 +129,7 @@ export class Scene3D {
     if (this.wrap.parentNode !== el) el.prepend(this.wrap);
     this.resize();
   }
-  opt(s) { this.S = s || {}; }
+  opt(s) { const z = this.S?.zoom; this.S = s || {}; if (z !== this.S.zoom) this.w = 0; }
   resize() {
     const p = this.wrap.parentNode; if (!p) return;
     const r = p.getBoundingClientRect();
@@ -132,7 +140,7 @@ export class Scene3D {
     this.renderer.setPixelRatio(this.S?.effects === 'reduced' ? 1 : dpr);
     this.renderer.setSize(w, h);
     this.ov.width = w * dpr; this.ov.height = h * dpr; this.ov.style.width = w + 'px'; this.ov.style.height = h + 'px'; this.dpr = dpr;
-    const view = 6.4, asp = w / Math.max(1, h);
+    const view = { near: 6.4, mid: 8.6, far: 10.8 }[this.S?.zoom || 'mid'] || 8.6, asp = w / Math.max(1, h);
     this.camera.left = -view * asp; this.camera.right = view * asp; this.camera.top = view; this.camera.bottom = -view;
     this.camera.updateProjectionMatrix();
   }
@@ -194,7 +202,7 @@ export class Scene3D {
     if (key === this.themeKey) return;
     this.themeKey = key; this.theme = th;
     this.scene.background = new THREE.Color(th.sky);
-    this.scene.fog = new THREE.Fog(th.fog, 26, 46);
+    this.scene.fog = new THREE.Fog(th.fog, 30, 52);
     this.sun.color.set(th.sun); this.hemi.color.set(th.sun); this.hemi.groundColor.set(th.ground);
     this.groundPlane.material.color.set(th.ground);
     this.floorCenter = null;
@@ -210,7 +218,7 @@ export class Scene3D {
     tile.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(tile), size = box.getSize(new THREE.Vector3());
     const isHex = th.floor.includes('hex');
-    const R = 22, cells = [];
+    const R = 26, cells = [];
     if (isHex) {
       const w = size.x, d = size.z, pointy = d > w;
       const sx = pointy ? w : w * 0.75, sz = pointy ? d * 0.75 : d;
@@ -246,7 +254,7 @@ export class Scene3D {
     this.floorCenter = { x: cx, z: cz };
   }
   updateProps(cx, cz) {
-    const th = this.theme, C = 5.5, R = 20;
+    const th = this.theme, C = 5.5, R = 24;
     const want = new Set();
     for (let i = Math.floor((cx - R) / C); i <= Math.floor((cx + R) / C); i++) for (let j = Math.floor((cz - R) / C); j <= Math.floor((cz + R) / C); j++) {
       const k = i + ',' + j; want.add(k);
@@ -306,7 +314,7 @@ export class Scene3D {
       case 'swing': if (H) { const cfg = HERO[state.cls]; H.play(cfg.atk[Math.floor(Math.random() * cfg.atk.length)], { once: true, speed: 1.6 }); if (cfg.ranged) this.projectile(this.heroPos(1.2), this.entPos(e.id, 1), ELEM_COL[state.cls === 'ranger' ? 'phys' : state.cls === 'warlock' ? 'shadow' : 'arcane'], 0.14, 0.18); } break;
       case 'hit': {
         const v = this.ents.get(e.id);
-        if (v) { v.flash = 0.12; if (!e.dot && v.char && !v.oneShotLock && Math.random() < 0.35) v.char.play('Hit_A', { once: true, speed: 1.5 }); }
+        if (v) { v.flash = e.crit || !v.boss ? 0.08 : 0; if (!e.dot && v.char && !v.oneShotLock && Math.random() < 0.35) v.char.play('Hit_A', { once: true, speed: 1.5 }); }
         const p = this.entPos(e.id, 1.2);
         if (!e.dot) this.sparks(p, e.crit ? 0xffd34d : ELEM_COL[e.elem] || 0xffffff, e.crit ? 10 : 4);
         this.num(p, fmtN(e.dmg), e.crit ? '#ffd34d' : e.dot ? hex(ELEM_COL[e.elem] || 0xffffff) : e.pet || e.minion ? '#ffe08a' : '#ffffff', e.crit ? 22 : e.dot ? 11 : 14, e.crit);
@@ -328,8 +336,8 @@ export class Scene3D {
         break;
       }
       case 'status': this.num(this.entPos(e.id, 2.4), STATUS[e.k].name, STATUS[e.k].color, 11, true); break;
-      case 'tele': this.banner = { text: '⚠ ' + e.name, sub: 'Get out of the red!', t: 1.4, c: '#ff5a4a' }; { const v = this.ents.get(e.id); if (v) v.charge = 1; } break;
-      case 'teleHit': this.shakeIt(0.4); for (const z of e.zones || []) { this.groundRing({ x: z.x, y: 0.05, z: z.z }, z.kind === 'storm' || z.kind === 'breath' ? 0xff7a2b : 0xff3a2a, 0.5, z.r, 0.5); this.sparks({ x: z.x, y: 0.3, z: z.z }, 0xff9a5a, 14); } break;
+      case 'tele': if (e.small) this.num(this.entPos(e.id, 2.6), '⚠', '#ff5a4a', 18, true); else this.banner = { text: '⚠ ' + e.name, sub: 'Get out of the red!', t: 1.4, c: '#ff5a4a' }; break;
+      case 'teleHit': { const v = this.ents.get(e.id); if (v?.char) { v.char.oneShot = null; v.char.play(v.atkClip === 'Spellcast_Shoot' ? 'Spellcast_Shoot' : '2H_Melee_Attack_Chop', { once: true, speed: 1.3 }); } } this.shakeIt(0.4); for (const z of e.zones || []) { this.groundRing({ x: z.x, y: 0.05, z: z.z }, z.kind === 'storm' || z.kind === 'breath' ? 0xff7a2b : 0xff3a2a, 0.5, z.r, 0.5); this.sparks({ x: z.x, y: 0.3, z: z.z }, 0xff9a5a, 14); } break;
       case 'phase': this.banner = { text: e.name, sub: e.n === 9 ? 'The boss is enraged!' : `Phase ${e.n}`, t: 2.2, c: '#ff8ad0' }; this.shakeIt(0.5); this.flashIt('#ff3bd0', 0.4, 0.3); break;
       case 'bossShield': this.num(this.entPos(e.id, 4), 'Shielded!', '#9ad8ff', 15, true); break;
       case 'smite': for (const [id] of this.ents) this.beam(this.entPos(id, 0), 0xfff3b0, 0.5, 0.25); break;
@@ -457,11 +465,13 @@ export class Scene3D {
         v.obj.rotation.y = lerpAngle(v.obj.rotation.y, Math.PI / 2 - (e.face || 0), Math.min(1, dt * 10));
         if (v.dying === undefined) {
           if (v.char.oneShot && this.t > v.char.oneShot.until) v.char.oneShot = null;
-          if (!v.char.oneShot) v.char.play(e.moving ? (v.walk) : 'Idle_Combat', { speed: e.moving ? 1.2 : 1 });
+          if (e.tele && v.boss) v.char.play(e.tele.kind === 'ultimate' || e.tele.kind === 'storm' ? 'Spellcast_Long' : 'Spellcast_Raise', { speed: 0.8 });
+          else if (!v.char.oneShot) v.char.play(e.moving ? (v.walk) : 'Idle_Combat', { speed: e.moving ? 1.2 : 1 });
         }
         v.char.mixer.update(dt * (e.frozen > 0 ? 0 : e.st?.chill ? 0.6 : 1));
         const fl = v.flash > 0;
-        if (fl !== v.flashing) { v.flashing = fl; v.char.obj.traverse((o) => { if (o.isMesh) o.material.emissive?.setScalar(fl ? 0.6 : 0); }); }
+        const glow = fl ? 0.6 : 0;
+        if (fl !== v.flashing || (v.boss && !!e.tele !== v.charging)) { v.flashing = fl; v.charging = !!e.tele; v.char.obj.traverse((o) => { if (o.isMesh && o.material.emissive) { if (fl) o.material.emissive.setScalar(v.boss ? 0.18 : 0.45); else if (e.tele) o.material.emissive.setRGB(0.3 + 0.2 * Math.abs(Math.sin(this.t * 10)), 0.05, 0.02); else if (o.userData.baseEm) o.material.emissive.copy(o.userData.baseEm); else o.material.emissive.setScalar(0); } }); }
       } else {
         // billboard boss: face the hero, bob, flash, charge glow
         const dx = (state.combat.hero.x - e.x) - (state.combat.hero.z - e.z);
@@ -510,7 +520,21 @@ export class Scene3D {
   }
   spawnEnt(e) {
     let v;
-    if (e.boss || e.vault) {
+    const b3 = (e.boss || e.vault) && BOSS3D[e.art[1]];
+    if (b3) {
+      const [file, tint, keep, extra = []] = b3;
+      const ch = this.makeChar(file, keep, tint, extra.map((w, i) => [w, i ? 'handslot.l' : 'handslot.r']));
+      const sc = e.vault ? 1.8 : file === 'mage' ? 1.75 : 2.0;
+      v = { obj: new THREE.Group(), char: ch, scale: sc, boss: true, isHeroModel: !file.startsWith('skel') };
+      ch.obj.scale.setScalar(sc); v.obj.add(ch.obj);
+      ch.obj.traverse((o) => { if (o.isMesh) { o.material.emissive = new THREE.Color(tint).multiplyScalar(/Eyes/.test(o.name) ? 1.5 : 0.12); o.userData.baseEm = o.material.emissive.clone(); } });
+      v.walk = file === 'skel_minion' ? 'Walking_D_Skeletons' : 'Running_A';
+      v.atkClip = file === 'skel_mage' || file === 'mage' ? 'Spellcast_Shoot' : '2H_Melee_Attack_Chop';
+      v.ranged = false;
+      ch.play(file.startsWith('skel') ? 'Spawn_Ground_Skeletons' : 'Cheer', { once: true, speed: 1.2 });
+      const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 1.75, 40), new THREE.MeshBasicMaterial({ color: e.vault ? 0xffd040 : 0xff7a2b, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; v.obj.add(ring); v.ring = ring;
+    } else if (e.boss || e.vault) {
       v = this.makeBillboard(e.art[0], e.art[1], e.vault ? 4.2 : e.art[0] === 'bosses' ? 5.2 : 4.4);
       v.baseFlip = false; v.scale = e.vault ? 1.8 : 2.2;
       const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 1.75, 40), new THREE.MeshBasicMaterial({ color: 0xff7a2b, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -609,7 +633,7 @@ export class Scene3D {
       if (e.elite) { x.font = '11px serif'; x.textAlign = 'center'; x.fillText(e.mods.map((m) => MOD_ICON[m]).join(''), p.x, p.y - 4); }
       this.drawStatuses(e, p.x, p.y - (e.elite ? 16 : 4));
     }
-    for (const e of c.enemies) if (e.boss && e.hp > 0) { const v = this.ents.get(e.id); if (v) { const p = this.project({ x: v.obj.position.x, y: 5.4, z: v.obj.position.z }); this.drawStatuses(e, p.x, p.y); } }
+    for (const e of c.enemies) if (e.boss && e.hp > 0) { const v = this.ents.get(e.id); if (v) { const p = this.project({ x: v.obj.position.x, y: v.billboard ? 5.4 : 2.3 * v.scale, z: v.obj.position.z }); this.drawStatuses(e, p.x, p.y); } }
     // hero shield bubble + joystick
     if (c.hero.shield > 0 || this.shell) {
       const p = this.project({ x: c.hero.x, y: 1, z: c.hero.z });

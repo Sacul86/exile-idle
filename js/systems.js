@@ -20,7 +20,7 @@ export function newState(cls = 'warrior') {
     dungeonTier: Object.fromEntries(DUNGEON_KEYS.map((k) => [k, 1])), towerBest: 0, towerClaimed: 0, riftLevel: 1, riftBest: 0, rushBest: 0,
     rules: { heal: 50, ult: 'boss', target: 'lowest', aoeMin: 2, saveDef: true, autoDodge: true },
     filters: { salvageBelow: 1, keepUniques: true, keepAffixes: [], autoEquip: true },
-    settings: { view: '3d', speed: 1, dmgNums: 'all', shake: true, sound: false, effects: 'full', text: 'm', colorSafe: false, autoOptimise: false },
+    settings: { view: '3d', zoom: 'mid', speed: 1, dmgNums: 'all', shake: true, sound: false, effects: 'full', text: 'm', colorSafe: false, autoOptimise: false },
     run: null, lastSeen: Date.now(), totals: { kills: 0, bosses: 0, deaths: 0, items: 0, time: 0 }, autoRepeat: true,
   };
   autoSkills(s);

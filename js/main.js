@@ -11,7 +11,7 @@ import { optimiseAll } from './optimize.js';
 import { Arena, setSkillNamer, fmtN } from './fx.js';
 import { Scene3D } from './scene3d.js';
 
-const VERSION = '2026.11.23-ea4';
+const VERSION = '2026.11.23-ea6';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const arena = new Arena();
@@ -602,6 +602,7 @@ function settingsModal() {
   const opt = (k, list) => `<div class="seg">${list.map(([v, n]) => `<button class="${String(S[k]) === String(v) ? 'on' : ''}" data-act="set" data-k="${k}" data-v="${v}">${n}</button>`).join('')}</div>`;
   modal(`<div class="mhead">Settings</div>
     <div class="rule"><span>Battle view</span>${opt('view', [['3d', '3D isometric'], ['2d', 'Classic 2D']])}</div>
+    <div class="rule"><span>Camera zoom</span>${opt('zoom', [['near', 'Close'], ['mid', 'Medium'], ['far', 'Far']])}</div>
     <div class="rule"><span>Combat speed</span>${opt('speed', [[1, '1x'], [1.5, '1.5x'], [2, '2x']])}</div>
     <div class="rule"><span>Damage numbers</span>${opt('dmgNums', [['all', 'All'], ['crits', 'Big only'], ['off', 'Off']])}</div>
     <div class="rule"><span>Screen shake</span>${opt('shake', [[true, 'On'], [false, 'Off']])}</div>

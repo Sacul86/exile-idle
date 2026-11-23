@@ -43,10 +43,10 @@ export function place(c, list, o = {}) {
   });
 }
 function moveStep(state, c, dt, alive) {
-  const h = c.hero, inp = state.input;
+  const h = c.hero, inp = state.input, R = heroRange(state);
   let dx = 0, dz = 0;
-  h.moving = false; h.manual = false;
-  if (inp && (inp.x || inp.z)) { dx = inp.x; dz = inp.z; h.manual = true; }
+  h.manual = false;
+  if (inp && (inp.x || inp.z)) { dx = inp.x; dz = inp.z; h.manual = true; h.chasing = false; }
   else {
     const zone = state.rules.autoDodge !== false && c.zones.find((z) => Math.hypot(h.x - z.x, h.z - z.z) < z.r + 0.5);
     if (zone) { dx = h.x - zone.x; dz = h.z - zone.z; if (Math.abs(dx) + Math.abs(dz) < 0.01) dx = 1; }
@@ -54,26 +54,61 @@ function moveStep(state, c, dt, alive) {
       const t = target(state, c);
       if (t) {
         const g = distHE(c, t) - t.r;
-        const close = heroRange(state) > 4 && c.enemies.find((e) => e.hp > 0 && (e.boss || e.elite) && !e.tele && distHE(c, e) - e.r < 2);
-        if (close) { dx = h.x - close.x; dz = h.z - close.z; }   // ranged heroes back off from big melee threats
-        else if (g > heroRange(state) * 0.9) { dx = t.x - h.x; dz = t.z - h.z; } else h.face = Math.atan2(t.z - h.z, t.x - h.x);
-      }
+        // ranged heroes retreat properly from big melee threats (then hold ground for a few seconds)
+        let kite = h.kiteId && alive.find((e) => e.id === h.kiteId);
+        if (kite && distHE(c, kite) - kite.r >= 4.5) { h.kiteId = null; h.kiteCd = c.t + 3.5; kite = null; }
+        if (!kite && R > 4 && c.t > (h.kiteCd || 0)) { kite = alive.find((e) => (e.boss || e.elite) && !e.tele && e.range < 3 && distHE(c, e) - e.r < 1.6); if (kite) h.kiteId = kite.id; }
+        if (kite) { dx = h.x - kite.x; dz = h.z - kite.z; h.chasing = false; }
+        else {
+          // hysteresis: start chasing when out of range, stop well inside it (no stutter at the edge)
+          if (g > R * 0.95) h.chasing = true; else if (g <= R * 0.7) h.chasing = false;
+          if (h.chasing) { dx = t.x - h.x; dz = t.z - h.z; } else h.face = Math.atan2(t.z - h.z, t.x - h.x);
+        }
+      } else h.chasing = false;
     }
   }
   const l = Math.hypot(dx, dz);
-  if (l > 0.01) { const sp = HERO_SPEED * dt * Math.min(1, l); h.x += (dx / l) * sp; h.z += (dz / l) * sp; h.face = Math.atan2(dz, dx); h.moving = true; }
+  h.moving = l > 0.01;
+  if (h.moving) { const sp = HERO_SPEED * dt * Math.min(1, l); h.x += (dx / l) * sp; h.z += (dz / l) * sp; h.face = Math.atan2(dz, dx); }
+  // melee enemies spread into an arc around you instead of stacking on one spot
+  const melee = alive.filter((e) => e.speed && e.range < 3 && !(e.frozen > 0) && !e.tele);
+  if (melee.length) {
+    const ang = melee.map((e) => Math.atan2(e.z - h.z, e.x - h.x));
+    const mx = ang.reduce((a, b) => a + Math.cos(b), 0), mz = ang.reduce((a, b) => a + Math.sin(b), 0);
+    const mean = Math.atan2(mz, mx);
+    const order = melee.map((e, i) => [e, ((ang[i] - mean + Math.PI * 3) % (Math.PI * 2)) - Math.PI]).sort((a, b) => a[1] - b[1]);
+    const gap = Math.min((Math.PI * 2) / order.length, 0.85);
+    order.forEach(([e], i) => { e.slotA = mean + (i - (order.length - 1) / 2) * gap; });
+  }
   for (const e of alive) {
     e.moving = false;
     if (e.frozen > 0 || e.tele || !e.speed) continue;
     const d = distHE(c, e) || 0.01;
     e.face = Math.atan2(h.z - e.z, h.x - e.x);
-    if (d - e.r - 0.4 > e.range) { const s = e.speed * (e.st.chill ? 0.6 : 1) * dt; e.x += ((h.x - e.x) / d) * s; e.z += ((h.z - e.z) / d) * s; e.moving = true; }
+    const sp = e.speed * (e.st.chill ? 0.6 : 1) * dt;
+    let tx, tz;
+    if (e.range >= 3) {
+      // casters keep their distance and drift sideways
+      e.strafeT = (e.strafeT || 0) - dt;
+      if (e.strafeT <= 0) { e.strafeT = rand(1.5, 3); e.strafe = Math.random() < 0.5 ? -1 : 1; }
+      const want = d < 3.5 ? 4.6 : d > e.range + e.r + 0.4 ? e.range : d;
+      const a = Math.atan2(e.z - h.z, e.x - h.x) + (want === d ? e.strafe * 0.35 * dt : 0);
+      tx = h.x + Math.cos(a) * want; tz = h.z + Math.sin(a) * want;
+    } else {
+      const rr = e.range + e.r + 0.3;
+      if (d > rr + 2.5) { tx = h.x; tz = h.z; }    // far away: run straight in
+      else { tx = h.x + Math.cos(e.slotA ?? 0) * rr; tz = h.z + Math.sin(e.slotA ?? 0) * rr; }
+    }
+    const mx = tx - e.x, mz = tz - e.z, ml = Math.hypot(mx, mz);
+    if (ml > (e.moving0 ? 0.08 : 0.3)) { const k = Math.min(sp, ml); e.x += (mx / ml) * k; e.z += (mz / ml) * k; e.moving = true; }
+    e.moving0 = e.moving;
   }
   for (let i = 0; i < alive.length; i++) for (let j = i + 1; j < alive.length; j++) {
     const a = alive[i], b = alive[j], ddx = b.x - a.x, ddz = b.z - a.z, d = Math.hypot(ddx, ddz) || 0.01, min = a.r + b.r;
     if (d < min) { const p = (min - d) / 2 / d; if (a.speed) { a.x -= ddx * p; a.z -= ddz * p; } if (b.speed) { b.x += ddx * p; b.z += ddz * p; } }
   }
-  for (const e of alive) { const ddx = h.x - e.x, ddz = h.z - e.z, d = Math.hypot(ddx, ddz) || 0.01, min = e.r + 0.4; if (d < min) { h.x += (ddx / d) * (min - d); h.z += (ddz / d) * (min - d); } }
+  // enemies never shove you: they get pushed out instead
+  for (const e of alive) { const ddx = e.x - h.x, ddz = e.z - h.z, d = Math.hypot(ddx, ddz) || 0.01, min = e.r + 0.45; if (d < min) { if (e.speed) { e.x += (ddx / d) * (min - d); e.z += (ddz / d) * (min - d); } else { h.x -= (ddx / d) * (min - d); h.z -= (ddz / d) * (min - d); } } }
 }
 
 export const ascMult = (state) => Math.pow(2, state.ascensions || 0);
@@ -92,12 +127,13 @@ export function makeEnemy(state, lvl, o = {}) {
   const mods = o.mods || [];
   if (o.boss) { hp *= o.raidBoss ? 26 : 16; dmg *= 2.6; aspd = 0.7; }
   if (mods.length) { hp *= 2.6; dmg *= 1.4; }
+  const mech = o.mech || (mods.length ? ['slam'] : []);
   if (mods.includes('tough')) hp *= 2;
   if (mods.includes('frenzied')) aspd *= 1.6;
   if (o.rm) { hp *= o.rm.hp || 1; dmg *= o.rm.dmg || 1; aspd *= o.rm.aspd || 1; }
   return {
     id: Math.random().toString(36).slice(2), name: o.name || MONSTER_NAMES[art[1]] || 'Monster', art, lvl, hp, maxHp: hp, dmg, aspd, atk: rand(0, 0.6),
-    res, mods, boss: !!o.boss, elite: mods.length > 0, mech: o.mech || [], phaseNames: o.phaseNames || [], phase: 0, tele: null, mechT: { slam: 4, breath: 5, adds: 6, storm: 7, shield: 9, ultimate: 3 },
+    res, mods, boss: !!o.boss, elite: mods.length > 0, mech, phaseNames: o.phaseNames || [], phase: 0, tele: null, mechT: { slam: 4, breath: 5, adds: 6, storm: 7, shield: 9, ultimate: 3 },
     shieldT: 0, st: {}, frozen: 0, summonT: 6, age: 0, xp: (o.boss ? 12 : mods.length ? 3 : 1), gold: (o.boss ? 15 : mods.length ? 3 : 1),
   };
 }
@@ -399,7 +435,7 @@ export function tick(state, dt) {
     if (e.mods.includes('regen')) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.02 * dt);
     if (e.mods.includes('summoner')) { e.summonT -= dt; if (e.summonT <= 0 && c.enemies.length < 6) { e.summonT = 7; c.enemies.push(makeEnemy(state, e.lvl, { art: ['monsters', 'skeleton'], name: 'Summoned Skeleton', mult: 0.3 })); place(c, c.enemies, { near: e }); ev(c, { t: 'summon' }); } }
     if (e.frozen > 0) { e.frozen -= dt; continue; }
-    if (e.boss) bossMechanics(state, c, e, dt);
+    if (e.boss || e.mech.length) bossMechanics(state, c, e, dt);
     if (e.tele) continue;
     let rate = e.aspd * (e.st.chill ? 0.65 : 1) * (e.enraged ? 1.5 : 1);
     if (distHE(c, e) - e.r - 0.4 > e.range + 0.3) { e.atk = Math.min(e.atk, 0.6); continue; }
@@ -478,12 +514,20 @@ function castSkill(state, c, role, sk, alive, echo = false) {
 function target(state, c) {
   const alive = c.enemies.filter((e) => e.hp > 0);
   if (!alive.length) return null;
+  const h = c.hero;
+  // stick with the current target for a while so the hero doesn't flip back and forth
+  const cur = h.tgtId && alive.find((e) => e.id === h.tgtId);
+  if (cur && c.t < (h.tgtUntil || 0)) return cur;
+  let t;
   switch (state.rules.target) {
-    case 'highest': return alive.reduce((a, b) => (b.hp > a.hp ? b : a));
-    case 'elite': return alive.find((e) => e.boss || e.elite) || alive.reduce((a, b) => (b.hp < a.hp ? b : a));
-    case 'first': return alive[0];
-    default: return alive.reduce((a, b) => (b.hp < a.hp ? b : a));
+    case 'highest': t = alive.reduce((a, b) => (b.hp > a.hp ? b : a)); break;
+    case 'elite': t = alive.find((e) => e.boss || e.elite) || alive.reduce((a, b) => (b.hp < a.hp ? b : a)); break;
+    case 'first': t = alive.reduce((a, b) => (distHE(c, b) < distHE(c, a) ? b : a)); break;
+    default: t = alive.reduce((a, b) => (b.hp < a.hp ? b : a));
   }
+  if (cur && t !== cur && distHE(c, t) > distHE(c, cur) + 3) t = cur;   // don't run past one enemy to reach another
+  h.tgtId = t.id; h.tgtUntil = c.t + 1.5;
+  return t;
 }
 
 // outgoing damage with every multiplier
@@ -505,6 +549,7 @@ function hit(state, c, e, coef, elem, o = {}) {
   if (e.shieldT > 0) mult *= 0.1;
   const dmg = base * mult * (1 - (e.res[elem] || 0)) * rand(0.92, 1.08);
   const dealt = dealRaw(state, c, e, dmg, elem, false, crit, o);
+  if (crit && !e.boss && e.speed && e.x !== undefined) { const d = distHE(c, e) || 1; e.x += ((e.x - c.hero.x) / d) * 0.35; e.z += ((e.z - c.hero.z) / d) * 0.35; }
   // statuses
   if (o.st && (!o.stCh || Math.random() < o.stCh)) applyStatus(state, c, e, o.st, dmg, o.stacks || 1);
   if (!o.noProc) {
@@ -647,12 +692,12 @@ function waveCleared(state, c) {
 const PHASES = [1, 0.7, 0.4, 0.15];
 function bossMechanics(state, c, e, dt) {
   const k = e.hp / e.maxHp;
-  let ph = 0; PHASES.forEach((p, i) => { if (k <= p) ph = i; });
+  let ph = 0; if (e.boss) PHASES.forEach((p, i) => { if (k <= p) ph = i; });
   if (ph !== e.phase) { e.phase = ph; ev(c, { t: 'phase', id: e.id, name: e.phaseNames[ph] || `Phase ${ph + 1}`, n: ph + 1 }); }
   const active = e.mech.slice(0, ph + 1);
   if (active.includes('enrage')) e.enraged = true;
   if (e.shieldT > 0) e.shieldT -= dt;
-  if (e.age > 120 && !e.hardEnrage) { e.hardEnrage = true; e.dmg *= 3; ev(c, { t: 'phase', id: e.id, name: 'Hard Enrage', n: 9 }); }
+  if (e.boss && e.age > 120 && !e.hardEnrage) { e.hardEnrage = true; e.dmg *= 3; ev(c, { t: 'phase', id: e.id, name: 'Hard Enrage', n: 9 }); }
   // telegraphs resolve
   if (e.tele) {
     e.tele.t -= dt;
@@ -673,7 +718,7 @@ function bossMechanics(state, c, e, dt) {
     e.mechT[m] -= dt;
     if (e.mechT[m] > 0) continue;
     switch (m) {
-      case 'slam': e.mechT.slam = 8; e.tele = { kind: 'slam', name: 'Crushing Slam', t: 1.6, total: 1.6, mult: 3.5 }; break;
+      case 'slam': if (!e.boss && distHE(c, e) - e.r > e.range + 1) { e.mechT.slam = 1; break; } e.mechT.slam = e.boss ? 8 : rand(6, 9); e.tele = e.boss ? { kind: 'slam', name: 'Crushing Slam', t: 1.6, total: 1.6, mult: 3.5 } : { kind: 'slam', name: 'Heavy Strike', t: 1.0, total: 1.0, mult: 2, small: true }; break;
       case 'breath': e.mechT.breath = 9; e.tele = { kind: 'breath', name: 'Fire Breath', t: 1.8, total: 1.8, mult: 2.5 }; break;
       case 'storm': e.mechT.storm = 11; e.tele = { kind: 'storm', name: e.art[1] === 'icesovereign' ? 'Blizzard' : 'Firestorm', t: 1.5, total: 1.5, mult: 1.5 }; break;
       case 'ultimate': e.mechT.ultimate = 13; e.tele = { kind: 'ultimate', name: e.phaseNames[3] || 'Annihilation', t: 2.6, total: 2.6, mult: 7 }; break;
@@ -682,12 +727,12 @@ function bossMechanics(state, c, e, dt) {
     }
     if (e.tele) {
       const h = c.hero, T = e.tele;
-      if (T.kind === 'slam') T.zones = [{ x: h.x, z: h.z, r: 2.6 }];
+      if (T.kind === 'slam') T.zones = [{ x: h.x, z: h.z, r: T.small ? 1.5 : 2.6 }];
       else if (T.kind === 'breath') T.zones = [{ x: (h.x + e.x) / 2 + (h.x - e.x) * 0.25, z: (h.z + e.z) / 2 + (h.z - e.z) * 0.25, r: 3.4 }];
       else if (T.kind === 'storm') T.zones = [{ x: h.x, z: h.z, r: 1.9 }, ...[0, 1, 2].map(() => ({ x: h.x + rand(-4, 4), z: h.z + rand(-4, 4), r: 1.9 }))];
       else T.zones = [{ x: e.x, z: e.z, r: 8.5 }];
       for (const z of T.zones) { z.owner = e.id; z.tele = T; z.kind = T.kind; c.zones.push(z); }
-      ev(c, { t: 'tele', id: e.id, name: T.name });
+      ev(c, { t: 'tele', id: e.id, name: T.name, small: !!T.small });
       break;
     }
   }
