@@ -17,6 +17,11 @@ A mobile-first auto-battle loot RPG that mixes Path of Exile-style character bui
 - **Armour sets:** a 5-piece set per class with 2/3/5-piece bonuses.
 - **Gear:** 10 slots, 6 rarities, item levels, T7–T1 affix tiers, +25 upgrades, reroll and promote crafting, and **12 Mythic uniques** with special powers.
 
+## One-tap optimising
+- **⚡ Optimise party / hero:** spends tree points, picks open class passives, equips the best gear from the bag, sets the best skill bar (and open skill-upgrade choices) and switches to the best pet.
+- Separate buttons for **Equip best**, **Best skills**, **Best passives** and **Best pet**.
+- Optional **Auto-optimise on level-up** setting (Stats tab).
+
 ## Content
 - 10 zones with painted backgrounds, 30+ monsters and 10 zone bosses (they enrage and slam).
 - **Vaults** (timed dungeons) and 3-phase **raids**.

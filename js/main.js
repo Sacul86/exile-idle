@@ -12,6 +12,7 @@ import { SKILLS, skillsFor, SKILL_BY_ID, skillSlots, skillUpgradeCost, MAX_SKILL
 import { Arena } from './fx.js';
 import { CLASS_WEAPONS, WEAPON_MASTERY, SETS, SET_SLOTS, setCounts, ASCENDANCY, ASC_LEVELS, ascRespecCost, isClassWeapon } from './classdata.js';
 import { PETS, PET_BY_ID, PET_MAX_LEVEL, petUpgradeCost, bonusText, invasionStatus, worldBossToday, INVASION_TIME, BOX_INFO, SHOP } from './pets.js';
+import { equipBest, bestSkills, bestAscendancy, bestPet, optimiseAll } from './optimize.js';
 import { renderTreeSvg, zoom, centerOn, getSelected, setSelected, resetView } from './treeview.js';
 import {
   newState, newHero, load, save, tick, ensureCombat, refreshStats, simulate, salvage, equipFromBag, unequip, BAG_SIZE, SAVE_KEY,
@@ -130,6 +131,7 @@ function renderBattle() {
           <div class="pc-skills">${h.skills.bar.slice(0, skillSlots(state.level)).map((id) => id && SKILL_BY_ID[id] ? `<span class="sk mini"><span>${SKILL_BY_ID[id].icon}</span><i class="cd" data-cd="${i}:${id}"></i></span>` : '').join('')}</div>
         </div>
       </div>`).join('')}</div>
+    <div class="opt-row"><button class="btn small primary" data-act="opt-party">⚡ Optimise party</button></div>
     <div class="kv panel">
       <div><b id="b-dps">${fmt(p.dps)}</b><small>Party DPS</small></div>
       <div><b id="b-hps">${fmt(p.hps)}</b><small>Healing/s</small></div>
@@ -214,6 +216,10 @@ function renderHeroes() {
   }
   const free = treePointsFree(C());
   view.innerHTML = heroSelector() + `
+    <div class="opt-row">
+      <button class="btn small primary" data-act="opt-hero">⚡ Optimise ${heroName(HI())}</button>
+      <button class="btn small primary" data-act="opt-party">⚡ Optimise party</button>
+    </div>
     <div class="seg">
       <button class="${heroSub === 'gear' ? 'on' : ''}" data-act="sub" data-s="gear">🛡️ Gear</button>
       <button class="${heroSub === 'tree' ? 'on' : ''}" data-act="sub" data-s="tree">🌳 Tree${free ? ` <i>${free}</i>` : ''}</button>
@@ -228,6 +234,7 @@ function renderHeroes() {
 function renderGear(body) {
   const st = HS(), h = H();
   body.innerHTML = `
+    <div class="opt-row"><button class="btn small" data-act="eq-best">🛡️ Equip best (${heroName(HI())})</button><button class="btn small" data-act="eq-best-all">🛡️ Equip best (party)</button></div>
     <div class="slots">${SLOTS.map((s) => {
       const it = h.gear[s.id];
       if (!it) return `<div class="slot empty"><div class="ic">${TYPE_ICONS[s.type]}</div><div><div class="nm muted">${s.name}</div><div class="sub">Empty</div></div></div>`;
@@ -307,6 +314,7 @@ function renderSkills(body) {
   const slots = skillSlots(state.level);
   const bar = Array.from({ length: 4 }, (_, i) => h.skills.bar[i]);
   body.innerHTML = `
+    <div class="opt-row"><button class="btn small" data-act="skills-best">✴️ Best skills</button><button class="btn small" data-act="skills-best-all">✴️ Best skills (party)</button></div>
     <p class="muted" style="font-size:12px;margin-top:0">Skills cast themselves. Tap a slot, then a skill. Tap a skill to rank it up; at ranks 5, 10 and 15 pick one of two upgrades. Slots: 2 → 3 at Lv 20 → 4 at Lv 50.</p>
     <div class="skillbar big">${bar.map((id, i) => i >= slots
       ? `<div class="sk locked">🔒<small>Lv ${i === 2 ? 20 : 50}</small></div>`
@@ -369,6 +377,7 @@ function renderClass(body) {
       <div class="muted" style="font-size:11px;margin-top:4px">${ROLES[cls.role].desc}</div>
       <button class="btn small" style="margin-top:6px" data-act="change-class" ${state.gold >= resetCost(state.level) * 2 && !state.run ? '' : 'disabled'}>Change class · 🪙${fmt(resetCost(state.level) * 2)}</button></div></div>
     <div class="panel"><h2>Class Passives</h2>
+      <div class="opt-row"><button class="btn small" data-act="asc-best" ${ascPending(HI()) ? '' : 'disabled'}>⚜️ Pick best for open choices</button></div>
       <p class="muted" style="font-size:12px;margin-top:0">At levels ${ASC_LEVELS.join(', ')} choose one of two passives. First pick is free; changing costs 🪙${fmt(ascRespecCost(state.level))}.</p>
       ${asc.map((opts, i) => `<div class="ms ${state.level >= ASC_LEVELS[i] ? '' : 'locked'}"><div class="ms-h">Level ${ASC_LEVELS[i]}${state.level >= ASC_LEVELS[i] ? '' : ' 🔒'}</div>
         <div class="ms-opts">${opts.map((o, j) => {
@@ -499,6 +508,7 @@ function renderPets() {
         <div class="muted" style="font-size:11px">Also attacks every 2s for ${Math.round((0.35 + lvl * 0.025) * 100)}% of the party's average hit.</div>
         <button class="btn small primary" style="margin-top:6px" data-act="pet-up" ${lvl < PET_MAX_LEVEL && costOk(c) ? '' : 'disabled'}>⬆️ Level up · ${costText(c)}</button>
       </div></div>` : ''}
+    <div class="opt-row"><button class="btn small primary" data-act="pet-best">🐾 Use best pet</button></div>
     <div class="panel egg-row"><span>🥚 Pet Eggs: <b>${state.eggs}</b></span>
       <button class="btn small primary" data-act="hatch" ${state.eggs ? '' : 'disabled'}>Hatch</button></div>
     <p class="muted" style="font-size:12px">Eggs drop from first zone-boss kills, dungeons, raids and boxes, or buy them with 🏅 emblems. A duplicate pet levels up the one you have.</p>
@@ -577,6 +587,7 @@ function renderMore() {
   view.innerHTML = `
     <div class="panel"><h2>Settings</h2>
       <div class="row"><span>Auto-equip upgrades</span><button class="btn small toggle ${s.autoEquip ? 'on' : ''}" data-act="set-autoequip">${s.autoEquip ? 'ON' : 'OFF'}</button></div>
+      <div class="row"><span>Auto-optimise on level-up<br><small class="muted">Spends tree points, picks passives, skills and pet</small></span><button class="btn small toggle ${s.autoOptimise ? 'on' : ''}" data-act="set-autoopt">${s.autoOptimise ? 'ON' : 'OFF'}</button></div>
       <div class="row"><span>Auto-salvage drops up to</span>
         <select id="sel-salvage">${['Off', ...RARITIES.slice(0, 4).map((r) => r.name)].map((n, i) => `<option value="${i}" ${s.autoSalvage === i ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
     </div>
@@ -796,6 +807,20 @@ function doAction(el) {
       return;
     }
     case 'buy': { if (buyShop(state, el.dataset.id)) toast(`Bought ${SHOP.find((s) => s.id === el.dataset.id).name}`); break; }
+    case 'opt-hero': case 'opt-party': {
+      const hs = a === 'opt-hero' ? [HI()] : [0, 1, 2];
+      const before = state.combat.party.power;
+      const r = optimiseAll(state, hs);
+      if (!r) { toast('Choose classes for every hero first'); return; }
+      const gain = (state.combat.party.power / before - 1) * 100;
+      toast(`⚡ ${[r.gear && `${r.gear} gear`, r.tree && `${r.tree} tree pts`, r.asc && `${r.asc} passives`, r.skills && 'skills', r.pet && `pet: ${PET_BY_ID[r.pet].name}`].filter(Boolean).join(' · ') || 'Already optimal'}${gain > 0.05 ? ` <span class="good">+${gain.toFixed(1)}% power</span>` : ''}`);
+      break;
+    }
+    case 'eq-best': case 'eq-best-all': { const n = equipBest(state, a === 'eq-best' ? [HI()] : [0, 1, 2]); toast(n ? `🛡️ Equipped ${n} upgrade${n > 1 ? 's' : ''}` : 'Nothing better in the bag'); break; }
+    case 'skills-best': case 'skills-best-all': { const n = bestSkills(state, a === 'skills-best' ? [HI()] : [0, 1, 2]); toast(n ? '✴️ Skill bar updated' : 'Already using the best skills'); break; }
+    case 'asc-best': { const n = bestAscendancy(state, [HI()]); toast(n ? '⚜️ Class passives chosen' : 'No open choices'); break; }
+    case 'pet-best': { const id = bestPet(state); toast(id ? `🐾 ${PET_BY_ID[id].name} is now active` : 'Already using the best pet'); break; }
+    case 'set-autoopt': state.settings.autoOptimise = !state.settings.autoOptimise; break;
     case 'set-autoequip': state.settings.autoEquip = !state.settings.autoEquip; break;
     case 'export': {
       save(state);
@@ -870,7 +895,10 @@ function frame(now) {
       case 'heroDown': toast(`💀 ${heroName(e.i)} is down!`); break;
       case 'phoenix': toast(`🔥 Phoenix revives ${heroName(e.i)}!`); break;
       case 'runEnd': structural = true; battleDirty = true; showRunEnd(e); break;
-      case 'level': toast(`⭐ Level ${e.level}! +1 passive point for each hero`); structural = true; battleDirty = true; break;
+      case 'level':
+        toast(`⭐ Level ${e.level}! +1 passive point for each hero`); structural = true; battleDirty = true;
+        if (state.settings.autoOptimise && partyReady(state)) { optimiseAll(state); }
+        break;
       case 'stage': structural = true; battleDirty = true; if (isBossStage(e.stage)) toast(`👑 Boss: ${zoneFor(e.stage).bossName}`); break;
       case 'death': toast('☠️ Party wiped. Falling back a stage.'); structural = true; battleDirty = true; break;
       case 'equip': toast(`▲ ${ROLES[roleOf(e.hero)].icon} <span class="${nc(e.item)}">${e.item.name}</span> <span class="good">+${(e.gain * 100).toFixed(1)}%</span>`); structural = true; break;

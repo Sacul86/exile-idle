@@ -415,3 +415,5 @@ h2 { font-weight: 800; letter-spacing: .06em; text-transform: uppercase; font-si
 .run-panel.invasion { border-color: #8f3d3d; background: #1f0f0c; }
 .rank { font-family: var(--font-head); font-size: 40px; font-weight: 800; text-align: center; margin: 6px 0; }
 .rank-S { color: #ff8a2b; text-shadow: 0 0 16px #ff8a2b; } .rank-A { color: #b46bff; } .rank-B { color: #f2d64b; } .rank-C { color: #6b8cff; } .rank-D { color: #c8c8c8; }
+.opt-row { display: flex; gap: 6px; margin-bottom: 10px; }
+.opt-row .btn { flex: 1; }

@@ -34,7 +34,7 @@ export function newState() {
     invasion: { used: null, best: 0 },
     bossesBeaten: {}, dungeonsCleared: {}, raidsCleared: {},
     run: null,
-    settings: { autoAdvance: true, autoEquip: true, autoSalvage: 2, speed: 1 },
+    settings: { autoAdvance: true, autoEquip: true, autoSalvage: 2, autoOptimise: false, speed: 1 },
     pushBlocked: false,
     lastSave: Date.now(),
     combat: null,
