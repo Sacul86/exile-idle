@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0d0b09">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Exile Idle</title>
+  <title>Exile Idle: Party of Legends</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -24,6 +24,7 @@
     <div class="hud-row currencies">
       <span>🪙 <b id="hud-gold">0</b></span>
       <span>💠 <b id="hud-shards">0</b></span>
+      <span>🏅 <b id="hud-emblems">0</b></span>
       <span>⚡ <b id="hud-power">0</b></span>
     </div>
   </header>
@@ -32,10 +33,10 @@
 
   <nav id="tabs">
     <button data-tab="battle" class="active"><span>⚔️</span>Battle</button>
-    <button data-tab="gear"><span>🛡️</span>Gear</button>
+    <button data-tab="heroes"><span>🛡️</span>Heroes<i id="tree-badge"></i></button>
     <button data-tab="bag"><span>🎒</span>Bag<i id="bag-badge"></i></button>
-    <button data-tab="build"><span>🌳</span>Build<i id="tree-badge"></i></button>
-    <button data-tab="endgame"><span>🏰</span>Endgame<i id="end-badge"></i></button>
+    <button data-tab="pets"><span>🐾</span>Pets<i id="pet-badge"></i></button>
+    <button data-tab="events"><span>🏰</span>Events<i id="end-badge"></i></button>
     <button data-tab="more"><span>📜</span>Stats</button>
   </nav>
 

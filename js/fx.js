@@ -18,6 +18,37 @@ const RAID_THEME = { sky: ['#0c0414', '#2a0a2e', '#6a1a4a'], hills: ['#1e0822', 
 const RARITY_COLORS = ['#c8c8c8', '#6b8cff', '#f2d64b', '#b46bff', '#ff8a2b', '#ff3b5c'];
 
 const rand = (a, b) => a + Math.random() * (b - a);
+
+// ---- painted art loader (with white silhouettes for hit flashes) ----
+const imgCache = new Map();
+export function art(dir, name) {
+  if (!name) return null;
+  const key = dir + '/' + name;
+  let e = imgCache.get(key);
+  if (!e) {
+    e = { img: new Image(), ok: false, white: null };
+    e.img.onload = () => {
+      e.ok = true;
+      if (dir === 'bg') return;
+      const c = document.createElement('canvas');
+      c.width = e.img.naturalWidth; c.height = e.img.naturalHeight;
+      const x = c.getContext('2d');
+      x.drawImage(e.img, 0, 0);
+      x.globalCompositeOperation = 'source-atop';
+      x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+      e.white = c;
+    };
+    e.img.src = `assets/${key}.webp`;
+    imgCache.set(key, e);
+  }
+  return e.ok ? e : null;
+}
+const BOSS_ART = new Set(['gorrak', 'brakka', 'jailer', 'thornmother', 'mycelia', 'ankhu', 'lich', 'fleshweaver', 'kraken', 'seraph', 'warden', 'dragon']);
+export const monsterArt = (id) => art(BOSS_ART.has(id) ? 'bosses' : 'monsters', id);
+// hero formation: index 0 tank (front), 1 healer (back), 2 dps (middle)
+const HERO_X = [0.385, 0.08, 0.23];
+const HERO_DY = [0, -4, 5];
+const DRAW_ORDER = [1, 2, 0];
 const spriteCache = new Map();
 function sprite(emoji, size, flip) {
   const key = emoji + size + (flip ? 'f' : '');
@@ -57,6 +88,9 @@ export class Arena {
     this.shake = 0;
     this.flash = null; // {color, t}
     this.p = { lunge: 0, hit: 0, evade: 0 };
+    this.hs = [0, 1, 2].map(() => ({ lunge: 0, hit: 0, evade: 0, heal: 0 }));
+    this.cur = 0;
+    this.pet = { lunge: 0 };
     this.m = { obj: null, spawn: 0, hit: 0, kb: 0, dying: null };
     this.themeKey = null;
     this.bgCache = null;
@@ -78,9 +112,14 @@ export class Arena {
     this.ambient = [];
   }
 
-  get px() { return this.w * 0.26; }
+  heroX(i) { return this.w * HERO_X[i]; }
+  heroFoot(i) { return this.gy + HERO_DY[i]; }
+  get heroH() { return this.h * 0.37; }
+  get px() { return this.heroX(this.cur); }
+  get py() { return this.heroFoot(this.cur) - this.heroH * 0.5; }
+  get my() { return this.gy - this.mSize() * 0.5; }
   get mx() { return this.w * 0.74; }
-  get gy() { return this.h * 0.8; }
+  get gy() { return this.h * 0.86; }
 
   setTheme(state) {
     const key = state.run ? state.run.kind : 'z' + (Math.floor((state.stage - 1) / 10) % THEMES.length);
@@ -202,29 +241,44 @@ export class Arena {
 
   // ---- events from the game ----
   onEvent(e, state) {
-    const { px, mx, gy } = this;
-    const my = gy - this.mSize() * 0.45, py = gy - 36;
+    this.cur = e.src ?? e.i ?? 0;
+    const { px, mx, gy, py, my } = this;
     switch (e.t) {
+      case 'heal':
+        this.hs[e.i].heal = 0.4;
+        this.num(px, py - 30, '+' + fmtN(e.amount), '#6fe07a', 13);
+        if (Math.random() < 0.5) this.burst(px, py, '#8fffa0', 5, 50, 2, 0.6, -90);
+        break;
+      case 'heroDown': this.burst(px, py, '#c8352f', 22, 140, 3.5, 0.8, 250); this.num(px, py - 40, 'Down!', '#ff6b5e', 15); break;
+      case 'revive': this.ring(px, py, '#6fe07a', 10, 60, 0.5, 4); break;
+      case 'phoenix': this.ring(px, py, '#ff8a2b', 10, 90, 0.6, 6); this.burst(px, py, '#ffb04a', 30, 160, 3, 0.9, -80); this.num(px, py - 50, 'Phoenix!', '#ffb04a', 16); break;
+      case 'petHit': {
+        this.pet.lunge = 0.2;
+        const ppx = this.w * 0.5, ppy = this.gy - this.h * 0.1;
+        this.fx.push({ k: 'proj', x0: ppx, y0: ppy, x1: mx, y1: my, life: 0.25, age: 0, c: '#ffe08a', c2: '#ffffff', r: 5, onHit: () => this.burst(mx, my, '#ffe08a', 6, 90, 2, 0.4, 100) });
+        this.num(mx, my - 20, fmtN(e.dmg), '#ffe08a', 13);
+        break;
+      }
       case 'hit':
         if (e.who === 'm') {
-          this.p.lunge = 0.14; this.m.hit = 0.1; this.m.kb = e.crit ? 10 : 5;
+          this.hs[this.cur].lunge = 0.14; this.m.hit = 0.1; this.m.kb = e.crit ? 10 : 5;
           this.burst(mx + rand(-10, 10), my + rand(-14, 14), e.crit ? '#ffd34d' : '#fff2d0', e.crit ? 14 : 6, e.crit ? 220 : 120, e.crit ? 3.5 : 2.5, 0.4, 300);
           this.num(mx, my - 30, fmtN(e.dmg), e.crit ? '#ffd34d' : '#ffffff', e.crit ? 22 : 15);
           if (e.crit) { this.shake = Math.max(this.shake, 4); this.fx.push({ k: 'slash', x: mx, y: my, a: rand(-0.6, 0.6), life: 0.22, age: 0, c: '#ffe8a0', r: 36 }); }
         } else {
-          this.p.hit = 0.12;
+          this.hs[this.cur].hit = 0.12;
           this.burst(px, py, '#ff4a3a', e.slam ? 18 : 6, e.slam ? 200 : 100, 3, 0.5, 300);
           this.num(px, py - 40, '-' + fmtN(e.dmg), '#ff6b5e', e.slam ? 20 : 14);
           if (e.slam) { this.shake = 9; this.flash = { c: '#ff2020', t: 0.25, a: 0.25 }; this.ring(px, gy, '#ff5040', 10, 90, 0.4, 6); }
         }
         break;
       case 'slam': this.fx.push({ k: 'warn', x: mx, y: my, life: 0.35, age: 0 }); break;
-      case 'evade': this.p.evade = 0.3; this.num(px, py - 40, 'Evade', '#9ad1ff', 13); break;
+      case 'evade': this.hs[this.cur].evade = 0.3; this.num(px, py - 40, 'Evade', '#9ad1ff', 13); break;
       case 'block': this.ring(px + 20, py, '#7ab0ff', 10, 34, 0.3, 5); this.num(px, py - 40, 'Block', '#9ad1ff', 13); break;
       case 'skill': this.skillFx(e.id, state); break;
       case 'kill': {
         const m = this.m.obj;
-        if (m) this.m.dying = { obj: m, age: 0, x: mx, y: my, icon: m.icon, size: this.mSize() };
+        if (m) this.m.dying = { obj: m, age: 0, x: mx, y: my, icon: m.icon, art: m.art, size: this.mSize() };
         this.burst(mx, my, this.theme.tint, m && m.boss ? 50 : 18, m && m.boss ? 260 : 160, 3.5, 0.8, 150);
         this.burst(mx, my, '#ffffff', 6, 80, 2, 0.5, -60);
         if (m && m.boss) { this.shake = 10; this.flash = { c: '#ffd34d', t: 0.4, a: 0.3 }; }
@@ -236,19 +290,17 @@ export class Arena {
         break;
       }
       case 'level':
-        this.ring(px, py, '#ffd34d', 10, 120, 0.8, 5);
-        this.burst(px, py, '#ffd34d', 30, 180, 3, 1, -40);
+        for (let i = 0; i < 3; i++) { this.cur = i; this.ring(this.px, this.py, '#ffd34d', 10, 100, 0.8, 5); this.burst(this.px, this.py, '#ffd34d', 14, 160, 3, 1, -40); }
         this.flash = { c: '#ffd34d', t: 0.3, a: 0.18 };
         break;
-      case 'death': this.burst(px, py, '#c8352f', 30, 160, 4, 0.9, 250); this.flash = { c: '#000', t: 0.6, a: 0.5 }; break;
+      case 'death': this.flash = { c: '#000', t: 0.6, a: 0.5 }; break;
       case 'phase': this.shake = 12; this.flash = { c: '#ff3bd0', t: 0.5, a: 0.35 }; this.ring(mx, my, '#ff5ad0', 20, 200, 0.7, 8); break;
       case 'runEnd': if (e.success) { this.flash = { c: '#ffd34d', t: 0.6, a: 0.35 }; } break;
     }
   }
 
   skillFx(id, state) {
-    const { px, mx, gy } = this;
-    const my = gy - this.mSize() * 0.45, py = gy - 36;
+    const { px, mx, gy, py, my } = this;
     switch (id) {
       case 'cleave':
         this.fx.push({ k: 'slash', x: mx, y: my, a: -0.5, life: 0.3, age: 0, c: '#e8f0ff', r: 52, wide: true });
@@ -277,6 +329,16 @@ export class Arena {
         this.burst(px, py, '#5cc46b', 20, 90, 3, 1, -120); this.num(px, py - 50, '+heal', '#5cc46b', 13); break;
       case 'molten':
         this.ring(px, py, '#ff8a2b', 50, 46, 0.4, 6); break;
+      case 'holylight':
+        for (let i = 0; i < 3; i++) { this.cur = i; this.fx.push({ k: 'beam', x: this.px, c: '#fff3b0', life: 0.7, age: 0, big: true }); }
+        this.flash = { c: '#fff3b0', t: 0.2, a: 0.15 }; break;
+      case 'rejuv':
+        for (let i = 0; i < 3; i++) { this.cur = i; this.burst(this.px, this.py, '#8fd14f', 14, 70, 3, 1.1, -70); this.ring(this.px, this.py, '#8fd14f', 6, 50, 0.6, 3); }
+        break;
+      case 'entangle':
+        this.ring(mx, gy - 2, '#5a8a2a', 10, 90, 0.6, 7); this.burst(mx, gy, '#6fbf4e', 24, 160, 3, 0.8, 300); break;
+      case 'unbreakable':
+        this.ring(px, py, '#c8c8c8', 50, 44, 0.6, 7); this.burst(px, py, '#d8d8d8', 12, 60, 2.5, 0.6, -40); break;
       case 'divshield':
         this.ring(px, py, '#fff3b0', 56, 48, 0.5, 7); this.burst(px, py, '#fff3b0', 16, 80, 2.5, 0.8, -60); break;
       case 'arc':
@@ -286,7 +348,7 @@ export class Arena {
         for (let i = 0; i < 8; i++) this.fx.push({ k: 'bolt', x0: mx + rand(-60, 60), y0: -10, x1: mx + rand(-20, 20), y1: my + rand(-10, 20), life: 0.2, age: -i * 0.09, c: i % 2 ? '#9ad8ff' : '#d8a0ff' });
         this.flash = { c: '#9ad8ff', t: 0.2, a: 0.15 }; this.shake = Math.max(this.shake, 4); break;
       case 'shadowstrike':
-        this.p.evade = 0.3;
+        this.hs[this.cur].evade = 0.3;
         this.fx.push({ k: 'slash', x: mx, y: my, a: 0.8, life: 0.3, age: 0.05, c: '#b46bff', r: 46, wide: true });
         this.fx.push({ k: 'slash', x: mx, y: my, a: -0.8, life: 0.3, age: -0.08, c: '#e0c0ff', r: 40 });
         this.burst(mx, my, '#7a3bd0', 18, 140, 3, 0.5, 0); break;
@@ -315,7 +377,29 @@ export class Arena {
     }
   }
 
-  mSize() { const m = this.m.obj; return m ? (m.raid ? 104 : m.boss ? 92 : m.elite ? 70 : 62) : 62; }
+  mSize() { const m = this.m.obj; const h = this.h || 300; return m ? (m.world ? h * 0.78 : m.raid ? h * 0.7 : m.boss ? h * 0.62 : m.elite ? h * 0.48 : h * 0.42) : h * 0.42; }
+
+  bgId(state) {
+    const r = state.run;
+    if (r) return r.kind === 'invasion' ? (r.boss === 'dragon' ? 'lair' : 'hellfire') : r.kind === 'raid' ? 'raid' : 'dungeon';
+    return state._zoneBg;
+  }
+
+  // draw an art image by its foot point, height-scaled; falls back to emoji
+  drawArt(entry, emoji, cx, footY, height, white, flip = false) {
+    const x = this.ctx;
+    if (entry) {
+      const im = entry.img, k = height / im.naturalHeight, w = im.naturalWidth * k;
+      x.save();
+      if (flip) { x.translate(cx, 0); x.scale(-1, 1); x.translate(-cx, 0); }
+      x.drawImage(im, cx - w / 2, footY - height, w, height);
+      if (white > 0 && entry.white) { x.globalAlpha *= white; x.drawImage(entry.white, cx - w / 2, footY - height, w, height); }
+      x.restore();
+      return w;
+    }
+    this.drawSprite(emoji || '❔', Math.round(height * 0.55), cx, footY - height * 0.4, flip, white);
+    return height * 0.6;
+  }
 
   // ---- per-frame ----
   frame(dt, state) {
@@ -330,60 +414,89 @@ export class Arena {
     x.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     // shake
     if (this.shake > 0) { x.translate(rand(-this.shake, this.shake), rand(-this.shake, this.shake)); this.shake = Math.max(0, this.shake - dt * 40); }
-    this.drawBg();
+    const bgE = art('bg', this.bgId(state));
+    if (bgE) {
+      const im = bgE.img, k = Math.max(w / im.naturalWidth, h / im.naturalHeight) * 1.04;
+      x.drawImage(im, (w - im.naturalWidth * k) / 2, (h - im.naturalHeight * k) * 0.75, im.naturalWidth * k, im.naturalHeight * k);
+      const vg = x.createRadialGradient(w / 2, h * 0.55, h * 0.25, w / 2, h * 0.55, w * 0.8);
+      vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.6)');
+      x.fillStyle = vg; x.fillRect(0, 0, w, h);
+      const fl = x.createLinearGradient(0, h * 0.7, 0, h); fl.addColorStop(0, 'rgba(0,0,0,0)'); fl.addColorStop(1, 'rgba(0,0,0,0.45)');
+      x.fillStyle = fl; x.fillRect(0, h * 0.7, w, h * 0.3);
+    } else this.drawBg();
     this.ambientTick(dt);
 
     const c = state.combat;
     const m = c.monster;
     if (m !== this.m.obj) { this.m.obj = m; this.m.spawn = 0; }
     this.m.spawn = Math.min(1, this.m.spawn + dt * 3.5);
-    for (const k of ['lunge', 'hit', 'evade']) this.p[k] = Math.max(0, this.p[k] - dt);
+    for (const hs of this.hs) for (const k of ['lunge', 'hit', 'evade', 'heal']) hs[k] = Math.max(0, hs[k] - dt);
+    this.pet.lunge = Math.max(0, this.pet.lunge - dt);
     this.m.hit = Math.max(0, this.m.hit - dt);
     this.m.kb = Math.max(0, this.m.kb - dt * 60);
 
-    // --- player ---
-    const pIcon = state._pIcon || '🧙';
-    const pDead = c.respawn > 0;
-    const pBob = Math.sin(this.t * 3) * 2.5;
-    const pLunge = this.p.lunge > 0 ? Math.sin((this.p.lunge / 0.14) * Math.PI) * 16 : 0;
-    const pSize = 64;
-    this.shadow(px, gy, 30);
-    // buffs aura
-    if (c.buffs && c.buffs.dmg) this.aura(px, gy - 34, '#ff4a3a', 44);
-    if (c.buffs && c.buffs.aps) this.aura(px, gy - 34, '#ffe36b', 40);
-    if (c.buffs && c.buffs.leech) this.aura(px, gy - 34, '#c8352f', 42);
-    if (c.buffs && c.buffs.evade) { x.globalAlpha = 0.5; }
-    if (this.p.evade > 0) { x.globalAlpha = 0.3; this.drawSprite(pIcon, pSize, px - 18, gy - 34 + pBob, false, 0); x.globalAlpha = 1; }
-    x.globalAlpha = pDead ? 0.25 : (c.buffs && c.buffs.evade ? 0.55 : 1);
-    this.drawSprite(pIcon, pSize, px + pLunge + (this.p.evade > 0 ? 10 : 0), gy - 34 + pBob, false, this.p.hit > 0 ? 0.8 : 0);
-    x.globalAlpha = 1;
-    if (c.shield && c.shield.v > 0) {
-      const g = x.createRadialGradient(px, gy - 34, 20, px, gy - 34, 50);
-      g.addColorStop(0, 'rgba(255,138,43,0)'); g.addColorStop(0.8, 'rgba(255,138,43,0.18)'); g.addColorStop(1, 'rgba(255,190,90,0.55)');
-      x.fillStyle = g; x.beginPath(); x.arc(px, gy - 34, 50 + Math.sin(this.t * 5) * 2, 0, 7); x.fill();
+    // --- party ---
+    const HH = this.heroH;
+    for (const i of DRAW_ORDER) {
+      const hc = c.heroes[i], hero = state.heroes[i], fx = this.hs[i];
+      if (!hc || !hero) continue;
+      const hx = this.heroX(i), foot = this.heroFoot(i);
+      const bob = Math.sin(this.t * 2.6 + i * 1.7) * 2;
+      const lunge = fx.lunge > 0 ? Math.sin((fx.lunge / 0.14) * Math.PI) * 14 : 0;
+      this.shadow(hx, foot, HH * 0.22);
+      const cy = foot - HH * 0.5;
+      if (hc.buffs.dmg) this.aura(hx, cy, '#ff4a3a', HH * 0.45);
+      if (hc.buffs.aps) this.aura(hx, cy, '#ffe36b', HH * 0.42);
+      if (hc.buffs.leech) this.aura(hx, cy, '#c8352f', HH * 0.44);
+      if (hc.buffs.hot || fx.heal > 0) this.aura(hx, cy, '#6fe07a', HH * 0.42);
+      const entry = art('heroes', hero.cls);
+      if (fx.evade > 0) { x.globalAlpha = 0.3; this.drawArt(entry, hero.cls ? '🧙' : '❔', hx - 16, foot + bob, HH, 0); x.globalAlpha = 1; }
+      x.globalAlpha = hc.dead ? 0.22 : (hc.buffs.evade ? 0.55 : 1);
+      this.drawArt(entry, '🧙', hx + lunge + (fx.evade > 0 ? 8 : 0), foot + bob, HH, fx.hit > 0 ? 0.7 : 0);
+      x.globalAlpha = 1;
+      if (hc.shield && hc.shield.v > 0) {
+        const g = x.createRadialGradient(hx, cy, HH * 0.2, hx, cy, HH * 0.52);
+        g.addColorStop(0, 'rgba(255,190,90,0)'); g.addColorStop(0.8, 'rgba(255,190,90,0.15)'); g.addColorStop(1, 'rgba(255,220,140,0.5)');
+        x.fillStyle = g; x.beginPath(); x.arc(hx, cy, HH * 0.52 + Math.sin(this.t * 5) * 2, 0, 7); x.fill();
+      }
+      // mini HP bar
+      const bw = 46, by = foot - HH - 8;
+      x.fillStyle = 'rgba(0,0,0,0.7)'; x.fillRect(hx - bw / 2 - 1, by - 1, bw + 2, 7);
+      const r = Math.max(0, hc.hp / hc.stats.maxLife);
+      x.fillStyle = r > 0.5 ? '#5cc46b' : r > 0.25 ? '#e0a040' : '#d0392f';
+      x.fillRect(hx - bw / 2, by, bw * r, 5);
+      if (hc.shield && hc.shield.v > 0) { x.fillStyle = '#ffb04a'; x.fillRect(hx - bw / 2, by - 3, bw * Math.min(1, hc.shield.v / hc.stats.maxLife), 2); }
+      if (hc.dead) { x.font = '700 11px system-ui'; x.textAlign = 'center'; x.fillStyle = '#ff8a7a'; x.fillText(Math.ceil(hc.dead) + 's', hx, by - 3); }
+    }
+    // --- pet ---
+    const petId = state.pets && state.pets.active;
+    if (petId) {
+      const pl = this.pet.lunge > 0 ? Math.sin((this.pet.lunge / 0.2) * Math.PI) * 12 : 0;
+      const pf = this.gy + 6;
+      this.shadow(w * 0.5, pf, h * 0.06);
+      this.drawArt(art('pets', petId), '🐾', w * 0.5 + pl, pf + Math.sin(this.t * 4) * 2, h * 0.2, 0);
     }
 
     // --- monster ---
     const ms = this.mSize();
-    const mBob = Math.sin(this.t * 2.4 + 1) * 3;
     const sc = Math.max(0.05, easeOutBack(this.m.spawn));
     const mxp = mx + this.m.kb;
-    const my = gy - ms * 0.45;
-    this.shadow(mx, gy, ms * 0.45 * sc);
-    if (m.boss || m.raid) this.aura(mx, my, m.raid ? '#ff3bd0' : '#ff8a2b', ms * 0.9 * (1 + Math.sin(this.t * 3) * 0.06));
-    else if (m.elite) this.aura(mx, my, '#6b8cff', ms * 0.75);
+    const my = gy - ms * 0.5;
+    this.shadow(mx, gy, ms * 0.3 * sc);
+    if (m.boss || m.raid) this.aura(mx, my, m.raid ? '#ff3bd0' : '#ff8a2b', ms * 0.7 * (1 + Math.sin(this.t * 3) * 0.06));
+    else if (m.elite) this.aura(mx, my, '#6b8cff', ms * 0.6);
     const enr = m.enrageAt && m.age > m.enrageAt;
-    if (enr) this.aura(mx, my, '#ff2020', ms * (1 + Math.sin(this.t * 10) * 0.1));
+    if (enr) this.aura(mx, my, '#ff2020', ms * 0.8 * (1 + Math.sin(this.t * 10) * 0.1));
     x.save();
     x.globalAlpha = this.m.spawn;
-    x.translate(mxp, my + mBob); x.scale(sc, sc);
-    this.drawSprite(m.icon, ms, 0, 0, true, this.m.hit > 0 ? 0.85 : 0);
+    x.translate(mxp, gy); x.scale(sc, sc);
+    this.drawArt(monsterArt(m.art), m.icon, 0, Math.sin(this.t * 2.2) * 2, ms, this.m.hit > 0 ? 0.75 : 0);
     x.restore();
     if (m.frozen > 0 && m.stunned) {
-      for (let i = 0; i < 3; i++) { const a = this.t * 4 + i * 2.1; x.font = '14px serif'; x.fillText('⭐', mxp + Math.cos(a) * 24, my - ms * 0.5 + Math.sin(a) * 6); }
+      for (let i = 0; i < 3; i++) { const a = this.t * 4 + i * 2.1; x.font = '14px serif'; x.textAlign = 'center'; x.fillText('⭐', mxp + Math.cos(a) * 26, gy - ms + 6 + Math.sin(a) * 6); }
     } else if (m.frozen > 0) {
-      x.fillStyle = 'rgba(150,220,255,0.28)';
-      x.beginPath(); x.arc(mxp, my, ms * 0.55, 0, 7); x.fill();
+      x.fillStyle = 'rgba(150,220,255,0.25)';
+      x.beginPath(); x.ellipse(mxp, my, ms * 0.38, ms * 0.5, 0, 0, 7); x.fill();
       x.strokeStyle = 'rgba(200,240,255,0.7)'; x.lineWidth = 2; x.stroke();
     }
     // dying monster
@@ -393,8 +506,8 @@ export class Arena {
       const k = d.age / 0.45;
       if (k >= 1) this.m.dying = null;
       else {
-        x.save(); x.globalAlpha = 1 - k; x.translate(d.x, d.y - k * 20); x.scale(1 + k * 0.3, 1 - k * 0.5);
-        this.drawSprite(d.icon, d.size, 0, 0, true, 0.9); x.restore();
+        x.save(); x.globalAlpha = 1 - k; x.translate(d.x, gy - k * 14); x.scale(1 + k * 0.2, 1 - k * 0.4);
+        this.drawArt(monsterArt(d.art), d.icon, 0, 0, d.size, 0.9); x.restore();
       }
     }
 
@@ -442,8 +555,8 @@ export class Arena {
       else { x.globalAlpha = this.flash.a * Math.min(1, this.flash.t * 4); x.fillStyle = this.flash.c; x.fillRect(-20, -20, w + 40, h + 40); x.globalAlpha = 1; }
     }
     // low life vignette
-    const lifeK = c.hp / c.stats.maxLife;
-    if (lifeK < 0.35 && !pDead) {
+    const lifeK = Math.min(...c.heroes.map((hh) => (hh.dead ? 1 : hh.hp / hh.stats.maxLife)));
+    if (lifeK < 0.35 && c.wipe <= 0) {
       const vg = x.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, w * 0.7);
       vg.addColorStop(0, 'rgba(180,0,0,0)'); vg.addColorStop(1, `rgba(180,0,0,${(0.35 - lifeK) * (1.2 + Math.sin(this.t * 6) * 0.3)})`);
       x.fillStyle = vg; x.fillRect(0, 0, w, h);
