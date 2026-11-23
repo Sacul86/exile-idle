@@ -1,9 +1,11 @@
 // One-tap optimisers: best gear, skills, class passives and pet.
 import { computeStats, targetSlot } from './stats.js';
-import { SKILL_BY_ID, skillsFor, skillSlots, skillEffective, skillMods, MILESTONES } from './skills.js';
+import { SKILL_BY_ID, skillsFor, skillSlots, skillEffective, skillMods, MILESTONES, skillUpgradeCost, MAX_SKILL_RANK } from './skills.js';
+import { upgradeCost, canUpgrade } from './items.js';
+import { petUpgradeCost, PET_MAX_LEVEL } from './pets.js';
 import { ASCENDANCY, ASC_LEVELS } from './classdata.js';
 import { PETS, PET_BY_ID } from './pets.js';
-import { charOf, refreshStats, autoAllocate, partyReady } from './game.js';
+import { charOf, refreshStats, autoAllocate, partyReady, hatchEgg, openBox } from './game.js';
 
 const powerOf = (state, i, gear) => computeStats(charOf(state, i), gear).power;
 
@@ -138,14 +140,86 @@ export function bestPet(state) {
   return best !== was ? best : null;
 }
 
+// ---- Spend gold & shards: always buy the upgrade with the most power per cost ----
+export function spendResources(state, heroes = [0, 1, 2], maxSteps = 400) {
+  const done = { gear: 0, skills: 0, pet: 0 };
+  const partyPower = () => state.heroes.reduce((a, h, i) => a + (h.cls ? powerOf(state, i, h.gear) : 0), 0);
+  for (let step = 0; step < maxSteps; step++) {
+    const total = partyPower();
+    const price = (c) => c.gold / Math.max(1, state.gold) + c.shards / Math.max(1, state.shards); // relative scarcity
+    const afford = (c) => c.gold <= state.gold && c.shards <= state.shards;
+    let best = null;
+    const consider = (gain, c, apply, kind) => {
+      if (gain <= 0 || !afford(c)) return;
+      const v = gain / Math.max(1e-6, price(c));
+      if (!best || v > best.v) best = { v, c, apply, kind };
+    };
+    for (const i of heroes) {
+      const h = state.heroes[i];
+      if (!h.cls) continue;
+      const base = powerOf(state, i, h.gear);
+      // gear +1
+      for (const it of Object.values(h.gear)) {
+        if (!it || !canUpgrade(it)) continue;
+        it.upgrade++;
+        const p = powerOf(state, i, h.gear);
+        it.upgrade--;
+        consider((p - base) / total, upgradeCost(it), () => { it.upgrade++; }, 'gear');
+      }
+      // skill ranks for skills on the bar (each rank: +10% effect, -2% cooldown)
+      const bar = h.skills.bar.slice(0, skillSlots(state.level)).filter(Boolean);
+      for (const id of bar) {
+        const rank = h.skills.ranks[id];
+        if (!rank || rank >= MAX_SKILL_RANK) continue;
+        const est = base * (0.045 / Math.max(1, bar.length)) * (MILESTONES.includes(rank + 1) ? 1.5 : 1);
+        consider(est / total, skillUpgradeCost(rank, state.level), () => { h.skills.ranks[id]++; }, 'skills');
+      }
+    }
+    // active pet level
+    const pid = state.pets.active;
+    const pl = pid && state.pets.owned[pid];
+    if (pl && pl < PET_MAX_LEVEL) {
+      state.pets.owned[pid]++;
+      const p = partyPower() * (1 + (pl + 1) * 0.002);
+      state.pets.owned[pid]--;
+      consider((p - total * (1 + pl * 0.002)) / total, petUpgradeCost(pl), () => { state.pets.owned[pid]++; }, 'pet');
+    }
+    if (!best) break;
+    state.gold -= best.c.gold; state.shards -= best.c.shards;
+    best.apply();
+    done[best.kind]++;
+  }
+  if (done.gear + done.skills + done.pet) { state.pushBlocked = false; refreshStats(state); }
+  return done;
+}
+
 // ---- Everything at once ----
-export function optimiseAll(state, heroes = [0, 1, 2]) {
+export function optimiseAll(state, heroes = [0, 1, 2], opts = { spend: true }) {
   if (!partyReady(state)) return null;
-  const r = { gear: 0, tree: 0, asc: 0, skills: 0, pet: null };
+  const r = { gear: 0, tree: 0, asc: 0, skills: 0, pet: null, hatched: 0, boxes: 0, spent: null };
+  while (state.eggs > 0 && hatchEgg(state)) r.hatched++;
+  for (const t of [1, 2, 3]) while (state.boxes[t] > 0) { openBox(state, t); r.boxes++; }
+  r.pet = bestPet(state);
   r.asc = bestAscendancy(state, heroes);
   for (const i of heroes) r.tree += autoAllocate(state, i);
   r.gear = equipBest(state, heroes);
+  if (opts.spend) r.spent = spendResources(state, heroes);
   r.skills = bestSkills(state, heroes);
-  r.pet = bestPet(state);
   return r;
+}
+
+export function describeResult(r) {
+  if (!r) return '';
+  const s = r.spent || {};
+  return [
+    r.hatched && `${r.hatched} egg${r.hatched > 1 ? 's' : ''} hatched`,
+    r.boxes && `${r.boxes} box${r.boxes > 1 ? 'es' : ''} opened`,
+    r.gear && `${r.gear} item${r.gear > 1 ? 's' : ''} equipped`,
+    s.gear && `${s.gear} gear upgrades`,
+    s.skills && `${s.skills} skill ranks`,
+    s.pet && `pet +${s.pet} lv`,
+    r.tree && `${r.tree} tree pts`,
+    r.asc && `${r.asc} passives`,
+    r.skills && 'skill bar set',
+  ].filter(Boolean).join(' · ');
 }

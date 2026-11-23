@@ -12,7 +12,7 @@ import { SKILLS, skillsFor, SKILL_BY_ID, skillSlots, skillUpgradeCost, MAX_SKILL
 import { Arena } from './fx.js';
 import { CLASS_WEAPONS, WEAPON_MASTERY, SETS, SET_SLOTS, setCounts, ASCENDANCY, ASC_LEVELS, ascRespecCost, isClassWeapon } from './classdata.js';
 import { PETS, PET_BY_ID, PET_MAX_LEVEL, petUpgradeCost, bonusText, invasionStatus, worldBossToday, INVASION_TIME, BOX_INFO, SHOP } from './pets.js';
-import { equipBest, bestSkills, bestAscendancy, bestPet, optimiseAll } from './optimize.js';
+import { equipBest, bestSkills, bestAscendancy, bestPet, optimiseAll, describeResult } from './optimize.js';
 import { renderTreeSvg, zoom, centerOn, getSelected, setSelected, resetView } from './treeview.js';
 import {
   newState, newHero, load, save, tick, ensureCombat, refreshStats, simulate, salvage, equipFromBag, unequip, BAG_SIZE, SAVE_KEY,
@@ -20,7 +20,7 @@ import {
   enrageMult, autoAllocate, charOf, partyReady, bestHeroFor, hatchEgg, openBox, buyShop,
 } from './game.js';
 
-export const VERSION = '2026.11.23-b';
+export const VERSION = '2026.11.23-c';
 let state = load() || newState();
 const arena = new Arena();
 ensureCombat(state);
@@ -588,7 +588,7 @@ function renderMore() {
   view.innerHTML = `
     <div class="panel"><h2>Settings</h2>
       <div class="row"><span>Auto-equip upgrades</span><button class="btn small toggle ${s.autoEquip ? 'on' : ''}" data-act="set-autoequip">${s.autoEquip ? 'ON' : 'OFF'}</button></div>
-      <div class="row"><span>Auto-optimise on level-up<br><small class="muted">Spends tree points, picks passives, skills and pet</small></span><button class="btn small toggle ${s.autoOptimise ? 'on' : ''}" data-act="set-autoopt">${s.autoOptimise ? 'ON' : 'OFF'}</button></div>
+      <div class="row"><span>Auto-optimise on level-up<br><small class="muted">Does everything Optimise does, including spending gold & shards</small></span><button class="btn small toggle ${s.autoOptimise ? 'on' : ''}" data-act="set-autoopt">${s.autoOptimise ? 'ON' : 'OFF'}</button></div>
       <div class="row"><span>Auto-salvage drops up to</span>
         <select id="sel-salvage">${['Off', ...RARITIES.slice(0, 4).map((r) => r.name)].map((n, i) => `<option value="${i}" ${s.autoSalvage === i ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
     </div>
@@ -815,7 +815,7 @@ function doAction(el) {
       const r = optimiseAll(state, hs);
       if (!r) { toast('Choose classes for every hero first'); return; }
       const gain = (state.combat.party.power / before - 1) * 100;
-      toast(`⚡ ${[r.gear && `${r.gear} gear`, r.tree && `${r.tree} tree pts`, r.asc && `${r.asc} passives`, r.skills && 'skills', r.pet && `pet: ${PET_BY_ID[r.pet].name}`].filter(Boolean).join(' · ') || 'Already optimal'}${gain > 0.05 ? ` <span class="good">+${gain.toFixed(1)}% power</span>` : ''}`);
+      toast(`⚡ ${describeResult(r) || 'Already optimal'}${r.pet ? ` · pet: ${PET_BY_ID[r.pet].name}` : ''}${gain > 0.05 ? ` <span class="good">+${gain.toFixed(1)}% power</span>` : ''}`);
       break;
     }
     case 'eq-best': case 'eq-best-all': { const n = equipBest(state, a === 'eq-best' ? [HI()] : [0, 1, 2]); toast(n ? `🛡️ Equipped ${n} upgrade${n > 1 ? 's' : ''}` : 'Nothing better in the bag'); break; }
