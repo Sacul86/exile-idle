@@ -28,6 +28,8 @@ export function App() {
   const s = useStore();
   const [tab, setTab] = useState<Tab>('party');
   const [modal, setModal] = useState<any>(null);
+  const [panel, setPanelRaw] = useState<number>(() => { const v = +(localStorage.getItem('pr-panel') ?? 1); return v >= 0 && v <= 2 ? v : 1; });
+  const setPanel = (v: number) => { v = Math.max(0, Math.min(2, v)); setPanelRaw(v); localStorage.setItem('pr-panel', String(v)); sfx('blip'); setTimeout(() => window.dispatchEvent(new Event('resize')), 30); setTimeout(() => window.dispatchEvent(new Event('resize')), 260); };
   const battleRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
   useEffect(() => {
@@ -37,11 +39,11 @@ export function App() {
   }, []);
   useEffect(() => { const iv = setInterval(() => notify(), 300); const sv = setInterval(persist, 8000); return () => { clearInterval(iv); clearInterval(sv); }; }, []);
   useEffect(() => { if (store.offlineReport) setModal({ kind: 'offline' }); }, [store.offlineReport]);
-  const go = (t: Tab) => { setTab(t); sfx('blip'); };
+  const go = (t: Tab) => { setTab(t); sfx('blip'); if (panel === 0) setPanel(1); };
   const q = QUESTS[s.quest];
   const bagNew = s.inventory.filter((i) => i.isNew).length;
   return (
-    <div class="root">
+    <div class={`root panel-${['min', 'mid', 'max'][panel]}`}>
       <div class="topbar">
         <div class="tb-item"><Spr k="gold3" s={0.9} /><b>{fmt(Math.floor(s.gold))}</b></div>
         {s.souls > 0 || s.ascensions > 0 ? <div class="tb-item souls"><Spr k="ui_soul" s={0.7} /><b>{fmt(s.souls)}</b></div> : null}
@@ -50,6 +52,11 @@ export function App() {
       </div>
       <div class="battle" ref={battleRef} />
       {q ? <button class="quest" onClick={() => { if (TABS.some((t) => t[0] === q.tab)) go(q.tab as Tab); }}><Spr k="ui_scroll0" s={0.9} /><span class="q-text"><span class="muted">Quest {s.quest + 1}/{QUESTS.length}</span> {q.text}</span>{q.gold(s) ? <Gold n={q.gold(s)} /> : null}</button> : null}
+      <div class="grip">
+        <button aria-label="Shrink menu" disabled={panel === 0} onClick={() => setPanel(panel - 1)}>▼</button>
+        <span class="grip-bar" onClick={() => setPanel(panel === 0 ? 1 : panel === 1 ? 2 : 0)} />
+        <button aria-label="Expand menu" disabled={panel === 2} onClick={() => setPanel(panel + 1)}>▲</button>
+      </div>
       <div class="panel-area">
         {tab === 'party' && <Party open={setModal} />}
         {tab === 'gear' && <Gear open={setModal} />}

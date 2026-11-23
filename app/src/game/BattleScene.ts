@@ -7,6 +7,7 @@ import { HERO, HeroId, biomeOf, BIOMES, KILLS_PER_STAGE, RARITIES, FOODS } from 
 import { sfx, music } from '../audio';
 
 const FONT = '"Pixelify Sans", monospace';
+const DPR = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
 const MELEE = new Set(['knight', 'cleric', 'rogue', 'barbarian']);
 const STEP = 0.05;
 type HeroView = { id: HeroId; spr: any; shadow: any; bar: any; x: number; y: number; bob: any; down: boolean };
@@ -29,13 +30,13 @@ export class BattleScene extends Phaser.Scene {
     g.destroy();
     this.bg = this.add.container(0, 0).setDepth(-10);
     this.hud = this.add.container(0, 0).setDepth(100);
-    this.stageText = this.add.text(10, 8, '', { fontFamily: FONT, fontSize: '15px', color: '#f2e6c8', stroke: '#000', strokeThickness: 4 }).setDepth(101);
+    this.stageText = this.add.text(10, 8, '', { fontFamily: FONT, resolution: DPR, fontSize: '17px', color: '#f2e6c8', stroke: '#000', strokeThickness: 4 }).setDepth(101);
     this.pips = this.add.graphics().setDepth(101);
     this.timerBar = this.add.graphics().setDepth(101);
     this.frenzyBar = this.add.graphics().setDepth(101);
     this.frenzyGlow = this.add.graphics().setDepth(99);
     this.monBar = this.add.graphics().setDepth(60);
-    this.monName = this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '13px', color: '#ffffff', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5, 1).setDepth(61);
+    this.monName = this.add.text(0, 0, '', { fontFamily: FONT, resolution: DPR, fontSize: '15px', color: '#ffffff', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5, 1).setDepth(61);
     this.shieldFx = this.add.ellipse(0, 0, 10, 10, 0x6ab0ff, 0.18).setStrokeStyle(2, 0x9ad0ff, 0.8).setDepth(40).setVisible(false);
     this.input.on('pointerdown', (p: any) => this.onTap(p));
     this.scale.on('resize', () => this.layout(true));
@@ -175,7 +176,7 @@ export class BattleScene extends Phaser.Scene {
     const fw = Math.min(160, this.W * 0.42), fx = this.W - fw - 10, fy = this.H - 14;
     f.fillStyle(0x000000, 0.7).fillRect(fx - 1, fy - 1, fw + 2, 8);
     f.fillStyle(s.frenzyT > 0 ? 0xff4ad0 : 0xb06aff, 1).fillRect(fx, fy, fw * fk, 6);
-    if (!this.frenzyLabel) this.frenzyLabel = this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '11px', color: '#e8d0ff', stroke: '#000', strokeThickness: 3 }).setOrigin(1, 1).setDepth(101);
+    if (!this.frenzyLabel) this.frenzyLabel = this.add.text(0, 0, '', { fontFamily: FONT, resolution: DPR, fontSize: '13px', color: '#e8d0ff', stroke: '#000', strokeThickness: 3 }).setOrigin(1, 1).setDepth(101);
     this.frenzyLabel.setPosition(this.W - 10, fy - 2).setText(s.frenzyT > 0 ? `FRENZY x2  ${Math.ceil(s.frenzyT)}s` : 'Tap to build Frenzy');
     const gl = this.frenzyGlow; gl.clear();
     if (s.frenzyT > 0) { const a = 0.35 + 0.25 * Math.sin(this.time.now / 120); gl.lineStyle(8, 0xff4ad0, a).strokeRect(4, 4, this.W - 8, this.H - 8); }
@@ -192,7 +193,7 @@ export class BattleScene extends Phaser.Scene {
     if (!store.s.settings.dmgNums) return;
     if (!crit && this.numBudget <= 0) return;
     this.numBudget--;
-    const t = this.add.text(x + Phaser.Math.Between(-18, 18), y, text, { fontFamily: FONT, fontSize: `${size}px`, color, stroke: '#000', strokeThickness: 4, fontStyle: crit ? 'bold' : 'normal' }).setOrigin(0.5).setDepth(90);
+    const t = this.add.text(x + Phaser.Math.Between(-18, 18), y, text, { fontFamily: FONT, resolution: DPR, fontSize: `${size}px`, color, stroke: '#000', strokeThickness: 4, fontStyle: crit ? 'bold' : 'normal' }).setOrigin(0.5).setDepth(90);
     t.setScale(crit ? 1.6 : 1.2);
     this.tweens.add({ targets: t, scale: 1, duration: 120, ease: 'Back.Out' });
     this.tweens.add({ targets: t, y: y - 46, alpha: 0, duration: 800, delay: 200, ease: 'Cubic.Out', onComplete: () => t.destroy() });
@@ -238,8 +239,8 @@ export class BattleScene extends Phaser.Scene {
   banner(text: string, sub = '', color = '#ffd34d', big = false) {
     const y = this.H * 0.42;
     const bgc = this.add.rectangle(this.W / 2, y, this.W, big ? 64 : 40, 0x000000, 0.65).setDepth(110);
-    const t = this.add.text(this.W / 2, y - (sub ? 8 : 0), text, { fontFamily: FONT, fontSize: big ? '28px' : '20px', color, stroke: '#000', strokeThickness: 5 }).setOrigin(0.5).setDepth(111);
-    const st = sub ? this.add.text(this.W / 2, y + (big ? 18 : 12), sub, { fontFamily: FONT, fontSize: '12px', color: '#e8dcc8', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setDepth(111) : null;
+    const t = this.add.text(this.W / 2, y - (sub ? 8 : 0), text, { fontFamily: FONT, resolution: DPR, fontSize: big ? '28px' : '20px', color, stroke: '#000', strokeThickness: 5 }).setOrigin(0.5).setDepth(111);
+    const st = sub ? this.add.text(this.W / 2, y + (big ? 18 : 12), sub, { fontFamily: FONT, resolution: DPR, fontSize: '12px', color: '#e8dcc8', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5).setDepth(111) : null;
     const items = [bgc, t, st].filter(Boolean);
     items.forEach((o: any) => { o.setAlpha(0); });
     t.setScale(0.6);
