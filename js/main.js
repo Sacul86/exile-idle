@@ -10,7 +10,7 @@ import { tick, ensureCombat, setStage, startRun, leaveRun, simulateOffline, refr
 import { optimiseAll } from './optimize.js';
 import { Arena, setSkillNamer, fmtN } from './fx.js';
 
-const VERSION = '2026.11.23-ea2';
+const VERSION = '2026.11.23-ea3';
 const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
 const arena = new Arena();
@@ -21,6 +21,8 @@ const sub = { character: 'stats', equipment: 'gear', skills: 'slots', activities
 let bagFilter = { slot: 'all', rarity: -1 };
 const lootLog = [];
 let pendingReport = null;
+let resetting = false;
+const saveNow = () => { if (state && state.picked && !resetting) sys.save(state); };
 
 // ---------------- helpers ----------------
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -568,8 +570,8 @@ document.addEventListener('click', (ev) => {
     case 'set': { const k = d.k; const v = d.v; state.settings[k] = v === 'true' ? true : v === 'false' ? false : isNaN(+v) ? v : +v; applySettings(); settingsModal(); return; }
     case 'export': { const txt = btoa(unescape(encodeURIComponent(JSON.stringify({ ...state, combat: null, _st: null })))); navigator.clipboard?.writeText(txt); prompt('Your save (copied):', txt); return; }
     case 'import': { const txt = prompt('Paste a save:'); if (txt) { try { const s = JSON.parse(decodeURIComponent(escape(atob(txt.trim())))); localStorage.setItem(sys.SAVE_KEY, JSON.stringify(s)); location.reload(); } catch (e) { alert('That save could not be read.'); } } return; }
-    case 'newGame': if (confirm('Start a new hero? This erases your current save.')) { localStorage.removeItem(sys.SAVE_KEY); location.reload(); } return;
-    case 'pickClass': state = sys.newState(d.cls); window.__state = state; ensureCombat(state); applySettings(); sys.save(state); closeModal(); switchTab('battle'); return;
+    case 'newGame': if (confirm('Start a new hero? This erases your current save.')) { resetting = true; localStorage.removeItem(sys.SAVE_KEY); location.reload(); } return;
+    case 'pickClass': state = sys.newState(d.cls); state.picked = true; window.__state = state; ensureCombat(state); applySettings(); sys.save(state); closeModal(); switchTab('battle'); return;
   }
   sys.dirty(state);
   if (!keepModal && a !== 'item') { /* keep modal closed */ }
@@ -585,7 +587,7 @@ document.addEventListener('change', (ev) => {
   else if (a === 'sock') { const it = state.bag.find((x) => x.id === el.dataset.id) || SLOTS.map((s) => state.gear[s]).find((x) => x && x.id === el.dataset.id); if (it && el.value) sys.socketGem(state, it, +el.dataset.i, el.value); itemModal(el.dataset.id); }
 });
 document.addEventListener('input', (ev) => { if (ev.target.dataset.act === 'ruleHeal') { const v = $('#ruleHealV'); if (v) v.textContent = ev.target.value + '%'; state.rules.heal = +ev.target.value; } });
-$('#modal').addEventListener('click', (ev) => { if (ev.target.id === 'modal') closeModal(); });
+$('#modal').addEventListener('click', (ev) => { if (ev.target.id === 'modal' && state?.picked) closeModal(); });
 for (const b of document.querySelectorAll('#tabs button')) b.addEventListener('click', () => switchTab(b.dataset.tab));
 
 function settingsModal() {
@@ -635,23 +637,24 @@ function loop(now) {
       arena.resize(); arena.frame(dt, state); battleTick();
     }
     uiT += dt; if (uiT > 1) { uiT = 0; hud(); if (tab === 'battle') refreshGoals(); }
-    saveT += dt; if (saveT > 10) { saveT = 0; sys.save(state); }
+    saveT += dt; if (saveT > 10) { saveT = 0; saveNow(); }
   }
   requestAnimationFrame(loop);
 }
 window.addEventListener('visibilitychange', () => {
   if (!state) return;
-  if (document.hidden) sys.save(state);
+  if (document.hidden) saveNow();
   else {
     const away = (Date.now() - state.lastSeen) / 1000;
     if (away > 120 && !state.run) { const rep = simulateOffline(state, away); state.lastSeen = Date.now(); if (rep) { refreshStats(state); offlineModal(rep); } }
   }
 });
-window.addEventListener('beforeunload', () => state && sys.save(state));
+window.addEventListener('beforeunload', saveNow);
 window.addEventListener('resize', () => arena.resize());
 $('#hud-settings').addEventListener('click', settingsModal);
 
-// boot
+// boot (a save without a chosen class, from the first build's bug, goes back to the class picker)
+if (state && !state.picked) state = null;
 if (state) {
   window.__state = state;
   applySettings();
