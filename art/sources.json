@@ -256,5 +256,91 @@
   "size": 768,
   "key": false,
   "inset": 10
+ },
+ {
+  "id": "ea_heroes",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/e1c68837-1550-4624-b79e-9301d7134191.png",
+  "grid": [
+   2,
+   2
+  ],
+  "dir": "heroes",
+  "names": [
+   "warlock",
+   "paladin",
+   "",
+   ""
+  ],
+  "size": 384
+ },
+ {
+  "id": "ea_bosses1",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/e1c68837-1550-4624-b79e-9301d7134191.png",
+  "grid": [
+   2,
+   2
+  ],
+  "dir": "bosses",
+  "names": [
+   "",
+   "",
+   "forgetyrant",
+   "icesovereign"
+  ],
+  "size": 448
+ },
+ {
+  "id": "ea_bosses2",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/b3830fb5-7c7f-4719-ad39-bd98a48c6557.png",
+  "grid": [
+   3,
+   2
+  ],
+  "dir": "bosses",
+  "names": [
+   "shadowlord",
+   "voidtitan",
+   "eternalone",
+   "",
+   "",
+   ""
+  ],
+  "size": 448
+ },
+ {
+  "id": "ea_mon",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/b3830fb5-7c7f-4719-ad39-bd98a48c6557.png",
+  "grid": [
+   3,
+   2
+  ],
+  "dir": "monsters",
+  "names": [
+   "",
+   "",
+   "",
+   "frostwolf",
+   "yeti",
+   "magmagolem"
+  ],
+  "size": 320
+ },
+ {
+  "id": "ea_bg",
+  "url": "https://rqkumunldqvmynqxibca.supabase.co/storage/v1/object/public/generated-images/667f931c-16b6-430d-8c18-f1eefca5fee4.png",
+  "grid": [
+   2,
+   2
+  ],
+  "dir": "bg",
+  "names": [
+   "frostfall",
+   "ironhold",
+   "tower",
+   "rift"
+  ],
+  "size": 768,
+  "key": false,
+  "inset": 12
  }
 ]
