@@ -4,7 +4,7 @@ An idle pixel RPG for phones. Play it at **https://sacul86.github.io/exile-idle/
 
 ## What's in it
 - **Party:** six heroes to recruit. Up to four fight at once; the rest gather resources.
-- **Stage combat:** ten kills per stage and a timed boss every five stages. Tap to deal damage and build Frenzy (double damage and gold for 15s).
+- **Stage combat:** ten kills per stage and a timed boss every five stages. Hold your finger on the battle to strike and charge Frenzy (double damage and gold for 15s).
 - **Hero levels:** each hero gets ×3 power every 25 levels.
 - **Skills:** Mining, Woodcutting, Fishing and Foraging are gathered by heroes. Smithing (crafts gear), Cooking (makes auto-eaten food) and Alchemy (makes timed buff potions) use what they gather.
 - **Loot:** five rarities and three gear slots per hero, with auto-equip, auto-salvage and item locking.

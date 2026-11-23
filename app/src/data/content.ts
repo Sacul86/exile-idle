@@ -118,7 +118,7 @@ export const PETS: PetDef[] = [
   { id: 'wolf', name: 'Fang', sprite: 'pet_wolf', from: 'boss', chance: 1 / 60, bonus: '+15% damage', stat: 'dmg', value: 0.15 },
   { id: 'drake', name: 'Smoulder', sprite: 'pet_drake', from: 'boss', chance: 1 / 120, bonus: '+5s boss timer', stat: 'bosstime', value: 5 },
   { id: 'hippogriff', name: 'Skyhoof', sprite: 'pet_hippogriff', from: 'kills', chance: 1 / 20000, bonus: '+25% damage', stat: 'dmg', value: 0.25 },
-  { id: 'butterfly', name: 'Flutter', sprite: 'pet_butterfly', from: 'taps', chance: 1 / 4000, bonus: '+50% tap damage', stat: 'tap', value: 0.5 },
+  { id: 'butterfly', name: 'Flutter', sprite: 'pet_butterfly', from: 'taps', chance: 1 / 4000, bonus: '+50% strike damage', stat: 'tap', value: 0.5 },
   { id: 'cherub', name: 'Pip', sprite: 'pet_cherub', from: 'ascend', chance: 1, bonus: '+10% souls', stat: 'souls', value: 0.1 },
 ];
 
@@ -131,7 +131,7 @@ export const SOUL_TREE: SoulUp[] = [
   { id: 'greed', name: 'Midas Touch', desc: (r) => `+${r * 40}% gold`, max: 999, cost: (r) => 1 + Math.floor(r / 2), icon: 'gold3' },
   { id: 'headstart', name: 'Head Start', desc: (r) => `Start each ascension at stage ${1 + r * 5}`, max: 20, cost: (r) => 2 + r * 2, icon: 'ui_scroll0' },
   { id: 'time', name: 'Patience', desc: (r) => `Boss timer +${r * 3}s`, max: 10, cost: (r) => 2 + r, icon: 'ui_crystal' },
-  { id: 'tap', name: 'Quick Fingers', desc: (r) => `+${r * 50}% tap damage`, max: 50, cost: (r) => r + 1, icon: 'pet_butterfly' },
+  { id: 'tap', name: 'Quick Fingers', desc: (r) => `+${r * 50}% strike damage`, max: 50, cost: (r) => r + 1, icon: 'pet_butterfly' },
   { id: 'skills', name: 'Craftsman', desc: (r) => `+${r * 10}% gather speed and skill XP`, max: 30, cost: (r) => 2 + r, icon: 'sk_smithing' },
   { id: 'loot', name: 'Treasure Hunter', desc: (r) => `+${r * 10}% drop chance`, max: 30, cost: (r) => 2 + r, icon: 'ui_chest' },
   { id: 'offline', name: 'Dreamwalker', desc: (r) => `Offline cap ${12 + r * 2}h`, max: 12, cost: (r) => 3 + r, icon: 'ui_book' },
@@ -155,13 +155,13 @@ export const ACHIEVEMENTS: Ach[] = [
   A('total200', 'Jack of All Trades', 'Total skill level 200', (s) => Object.values(s.skillLv).reduce((a: number, b: any) => a + b, 0) >= 200, 'gather', 0.1),
   A('pet1', 'Best Friend', 'Find a pet', (s) => Object.keys(s.pets).length >= 1, 'dmg', 0.05), A('pet5', 'Menagerie', 'Find 5 pets', (s) => Object.keys(s.pets).length >= 5, 'dmg', 0.1),
   A('asc1', 'Reborn', 'Ascend once', (s) => s.ascensions >= 1, 'dmg', 0.1), A('asc5', 'Eternal', 'Ascend 5 times', (s) => s.ascensions >= 5, 'dmg', 0.2),
-  A('tap1k', 'Clicky', 'Tap 1,000 times', (s) => s.stats.taps >= 1000, 'tap', 0.25), A('frenzy10', 'Frenzied', 'Trigger Frenzy 10 times', (s) => s.stats.frenzies >= 10, 'tap', 0.25),
+  A('tap1k', 'Clicky', 'Land 1,000 strikes', (s) => s.stats.taps >= 1000, 'tap', 0.25), A('frenzy10', 'Frenzied', 'Trigger Frenzy 10 times', (s) => s.stats.frenzies >= 10, 'tap', 0.25),
 ];
 
 export interface Quest { text: string; check: (s: any) => boolean; gold: (s: any) => number; tab?: string }
 export const QUESTS: Quest[] = [
   { text: 'Level up Sir Donald to level 5', check: (s) => s.heroes.knight?.level >= 5, gold: () => 40, tab: 'party' },
-  { text: 'Tap the monster 20 times', check: (s) => s.stats.taps >= 20, gold: () => 60, tab: 'battle' },
+  { text: 'Hold your finger on the battle to charge Frenzy', check: (s) => s.stats.frenzies >= 1, gold: () => 60, tab: 'battle' },
   { text: 'Reach stage 3', check: (s) => s.maxStage >= 3, gold: () => 100 },
   { text: 'Recruit Joseph the Ranger', check: (s) => !!s.heroes.ranger, gold: () => 150, tab: 'party' },
   { text: 'Defeat your first boss (stage 5)', check: (s) => s.stats.bosses >= 1, gold: () => 400 },

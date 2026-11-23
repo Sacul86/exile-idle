@@ -25,7 +25,7 @@ export interface GameState {
   lastSeen: number; started: boolean;
 }
 export interface Monster { key: string; name: string; hp: number; maxHp: number; dmg: number; atkT: number; boss: boolean; id: number }
-export interface Runtime { monster: Monster | null; events: any[]; spawnT: number; shield: number; rage: number; eatT: number; checkT: number; mid: number }
+export interface Runtime { monster: Monster | null; events: any[]; spawnT: number; shield: number; rage: number; eatT: number; checkT: number; mid: number; holding: boolean; holdT: number }
 
 const SKILLS: SkillId[] = ['mining', 'woodcutting', 'fishing', 'foraging', 'smithing', 'cooking', 'alchemy'];
 export function newGame(): GameState {
@@ -92,7 +92,7 @@ export const xpMult = (s: GameState) => (s.buffs.wisdom ? 2 : 1) * (1 + 0.1 * (s
 export const power = (s: GameState) => Math.round(partyDps(s));
 
 // ---------------- runtime ----------------
-export function newRuntime(): Runtime { return { monster: null, events: [], spawnT: 0.3, shield: 0, rage: 0, eatT: 0, checkT: 0, mid: 0 }; }
+export function newRuntime(): Runtime { return { monster: null, events: [], spawnT: 0.3, shield: 0, rage: 0, eatT: 0, checkT: 0, mid: 0, holding: false, holdT: 0 }; }
 const ev = (rt: Runtime, e: any) => { if (rt.events.length < 300) rt.events.push(e); };
 
 function spawn(s: GameState, rt: Runtime) {
@@ -109,7 +109,10 @@ function spawn(s: GameState, rt: Runtime) {
 export function tick(s: GameState, rt: Runtime, dt: number) {
   s.stats.time += dt;
   for (const k of Object.keys(s.buffs) as PotionId[]) { s.buffs[k]! -= dt; if (s.buffs[k]! <= 0) delete s.buffs[k]; }
-  if (s.frenzyT > 0) s.frenzyT -= dt; else s.frenzy = Math.max(0, s.frenzy - dt * 6);
+  if (s.frenzyT > 0) s.frenzyT -= dt;
+  else if (rt.holding) { s.frenzy += dt * 100 / FRENZY_CHARGE; if (s.frenzy >= 100) { s.frenzy = 100; s.frenzyT = FRENZY_TIME; s.stats.frenzies++; ev(rt, { t: 'frenzy' }); } }
+  else s.frenzy = Math.max(0, s.frenzy - dt * 12);
+  if (rt.holding) { rt.holdT -= dt; if (rt.holdT <= 0) { rt.holdT += 1 / HOLD_RATE; strike(s, rt); } }
   gatherTick(s, rt, dt);
   combatTick(s, rt, dt);
   rt.checkT -= dt;
@@ -190,9 +193,12 @@ export function hitMonster(s: GameState, rt: Runtime, dmg: number, o: any) {
   ev(rt, { t: 'hit', dmg, ...o });
   if (m.hp <= 0) killMonster(s, rt);
 }
-export function tap(s: GameState, rt: Runtime) {
+// Hold the battle screen: charges Frenzy (FRENZY_CHARGE seconds to fill) and lands HOLD_RATE strikes/s.
+export const FRENZY_CHARGE = 6, FRENZY_TIME = 15, HOLD_RATE = 6;
+export function setHolding(rt: Runtime, on: boolean) { if (on && !rt.holding) rt.holdT = 0; rt.holding = on; }
+export function tap(s: GameState, rt: Runtime) { strike(s, rt); }
+function strike(s: GameState, rt: Runtime) {
   s.stats.taps++;
-  if (s.frenzyT <= 0) { s.frenzy += 4; if (s.frenzy >= 100) { s.frenzy = 100; s.frenzyT = 15; s.stats.frenzies++; ev(rt, { t: 'frenzy' }); } }
   if (Math.random() < (PETS.find((p) => p.id === 'butterfly')!.chance) && !s.pets.butterfly) givePet(s, rt, 'butterfly');
   if (rt.monster) hitMonster(s, rt, tapDamage(s) * (s.frenzyT > 0 ? 2 : 1), { tap: true, crit: Math.random() < 0.1 });
 }

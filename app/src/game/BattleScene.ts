@@ -38,7 +38,12 @@ export class BattleScene extends Phaser.Scene {
     this.monBar = this.add.graphics().setDepth(60);
     this.monName = this.add.text(0, 0, '', { fontFamily: FONT, resolution: DPR, fontSize: '15px', color: '#ffffff', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5, 1).setDepth(61);
     this.shieldFx = this.add.ellipse(0, 0, 10, 10, 0x6ab0ff, 0.18).setStrokeStyle(2, 0x9ad0ff, 0.8).setDepth(40).setVisible(false);
-    this.input.on('pointerdown', (p: any) => this.onTap(p));
+    this.input.on('pointerdown', (p: any) => this.onDown(p));
+    this.input.on('pointermove', (p: any) => { if (p.isDown) { this.holdX = p.x; this.holdY = p.y; } });
+    const up = () => this.onUp();
+    this.input.on('pointerup', up); this.input.on('pointerupoutside', up); this.input.on('gameout', up);
+    window.addEventListener('blur', up); document.addEventListener('visibilitychange', up);
+    this.holdRing = this.add.graphics().setDepth(96);
     this.scale.on('resize', () => this.layout(true));
     this.layout(true);
   }
@@ -177,7 +182,7 @@ export class BattleScene extends Phaser.Scene {
     f.fillStyle(0x000000, 0.7).fillRect(fx - 1, fy - 1, fw + 2, 8);
     f.fillStyle(s.frenzyT > 0 ? 0xff4ad0 : 0xb06aff, 1).fillRect(fx, fy, fw * fk, 6);
     if (!this.frenzyLabel) this.frenzyLabel = this.add.text(0, 0, '', { fontFamily: FONT, resolution: DPR, fontSize: '13px', color: '#e8d0ff', stroke: '#000', strokeThickness: 3 }).setOrigin(1, 1).setDepth(101);
-    this.frenzyLabel.setPosition(this.W - 10, fy - 2).setText(s.frenzyT > 0 ? `FRENZY x2  ${Math.ceil(s.frenzyT)}s` : 'Tap to build Frenzy');
+    this.frenzyLabel.setPosition(this.W - 10, fy - 2).setText(s.frenzyT > 0 ? `FRENZY x2  ${Math.ceil(s.frenzyT)}s` : 'Hold to charge Frenzy');
     const gl = this.frenzyGlow; gl.clear();
     if (s.frenzyT > 0) { const a = 0.35 + 0.25 * Math.sin(this.time.now / 120); gl.lineStyle(8, 0xff4ad0, a).strokeRect(4, 4, this.W - 8, this.H - 8); }
     // shield wall
@@ -276,13 +281,29 @@ export class BattleScene extends Phaser.Scene {
   }
 
   // ---------- input ----------
-  onTap(p: any) {
+  holdX = 0; holdY = 0; holdRing: any;
+  onDown(p: any) {
     const s = store.s; if (!s.started) return;
-    E.tap(s, store.rt);
-    sfx('tap', 0.03);
-    const slash = this.add.image(p.x, p.y, 'px').setScale(1).setDepth(95).setTint(0xffffff);
+    this.holdX = p.x; this.holdY = p.y;
+    E.setHolding(store.rt, true);
+  }
+  onUp() { E.setHolding(store.rt, false); this.holdRing?.clear(); }
+  strikeFx() {
+    sfx('tap', 0.05);
+    const x = this.holdX + Phaser.Math.Between(-14, 14), y = this.holdY + Phaser.Math.Between(-14, 14);
+    const slash = this.add.image(x, y, 'px').setScale(1).setDepth(95).setTint(store.s.frenzyT > 0 ? 0xff8ae0 : 0xffffff);
     this.tweens.add({ targets: slash, scaleX: 14, scaleY: 1.5, angle: Phaser.Math.Between(-60, 60), alpha: 0, duration: 160, onComplete: () => slash.destroy() });
-    if (navigator.vibrate) try { navigator.vibrate(4); } catch (_) {}
+    if (navigator.vibrate) try { navigator.vibrate(3); } catch (_) {}
+  }
+  drawHold() {
+    const g = this.holdRing; if (!g) return; g.clear();
+    if (!store.rt.holding) return;
+    const s = store.s, x = this.holdX, y = this.holdY, t = this.time.now;
+    const k = s.frenzyT > 0 ? s.frenzyT / E.FRENZY_TIME : s.frenzy / 100;
+    const col = s.frenzyT > 0 ? 0xff4ad0 : 0xb06aff;
+    g.lineStyle(4, 0x000000, 0.5).strokeCircle(x, y, 30);
+    g.lineStyle(4, col, 1).beginPath().arc(x, y, 30, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k).strokePath();
+    g.fillStyle(col, 0.12 + 0.08 * Math.sin(t / 90)).fillCircle(x, y, 26);
   }
 
   // ---------- event handling ----------
@@ -291,7 +312,7 @@ export class BattleScene extends Phaser.Scene {
     switch (e.t) {
       case 'hit': {
         this.flashMon(!!(e.tap || e.crit));
-        if (e.tap) { this.num(this.monX, this.groundY - 90, E.fmt(e.dmg), '#b8f0ff', 14, e.crit); break; }
+        if (e.tap) { this.strikeFx(); this.num(this.monX, this.groundY - 90, E.fmt(e.dmg), '#b8f0ff', 14, e.crit); break; }
         if (v && !e.ability) {
           this.lunge(v);
           if (e.hero === 'ranger') this.projectile(v, 'fx_arrow0', { scale: 1.6, arc: 10 });
@@ -361,7 +382,7 @@ export class BattleScene extends Phaser.Scene {
     const evs = store.rt.events.splice(0);
     for (const e of evs) { try { this.handle(e); } catch (err) { console.warn(err); } }
     if (Math.floor(s.stage / 10) % BIOMES.length !== this.biomeIdx && Math.floor((s.stage - 1) / 10) % BIOMES.length !== this.biomeIdx) this.layout();
-    this.syncHeroes();
+    this.syncHeroes(); this.drawHold();
     this.syncMonster();
     this.drawHeroBars(); this.drawMonBar(); this.drawHud();
   }

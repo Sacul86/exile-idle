@@ -281,12 +281,12 @@ function Collection() {
       <h2>Stats</h2>
       <div class="card kv">
         <span>Best stage</span><b>{s.maxStage}</b><span>Monsters defeated</span><b>{fmt(s.stats.kills)}</b><span>Bosses defeated</span><b>{fmt(s.stats.bosses)}</b>
-        <span>Taps</span><b>{fmt(s.stats.taps)}</b><span>Gold earned</span><b>{fmt(s.stats.goldEarned)}</b><span>Ascensions</span><b>{s.ascensions}</b><span>Time played</span><b>{E.fmtTime(s.stats.time)}</b>
+        <span>Strikes</span><b>{fmt(s.stats.taps)}</b><span>Gold earned</span><b>{fmt(s.stats.goldEarned)}</b><span>Ascensions</span><b>{s.ascensions}</b><span>Time played</span><b>{E.fmtTime(s.stats.time)}</b>
       </div>
     </div>
   );
 }
-const hint = (from: string) => ({ mining: 'Rare find while mining', woodcutting: 'Rare find while chopping', fishing: 'Rare find while fishing', foraging: 'Rare find while foraging', smithing: 'Rare find while smithing', cooking: 'Rare find while cooking', alchemy: 'Rare find while brewing', boss: 'Dropped by bosses', kills: 'Very rare from any monster', taps: 'Very rare from tapping', ascend: 'Ascend once' } as any)[from];
+const hint = (from: string) => ({ mining: 'Rare find while mining', woodcutting: 'Rare find while chopping', fishing: 'Rare find while fishing', foraging: 'Rare find while foraging', smithing: 'Rare find while smithing', cooking: 'Rare find while cooking', alchemy: 'Rare find while brewing', boss: 'Dropped by bosses', kills: 'Very rare from any monster', taps: 'Very rare from striking', ascend: 'Ascend once' } as any)[from];
 
 // ---------------- ascend ----------------
 function Ascend({ open }: { open: (m: any) => void }) {
