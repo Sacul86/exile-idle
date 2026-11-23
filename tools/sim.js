@@ -4,26 +4,14 @@ import { newState, newHero, simulate, refreshStats, autoAllocate, startRun, dung
 import { upgradeCost, canUpgrade } from '../js/items.js';
 import { skillUpgradeCost, MAX_SKILL_RANK, skillSlots } from '../js/skills.js';
 import { petUpgradeCost } from '../js/pets.js';
+import { optimiseAll } from '../js/optimize.js';
 const [hours = 3, tank = 'marauder', healer = 'templar', dps = 'witch'] = process.argv.slice(2);
 const s = newState();
 s.heroes = [newHero('tank', tank), newHero('healer', healer), newHero('dps', dps)];
 refreshStats(s);
 for (let m = 0; m < hours * 60; m += 5) {
   simulate(s, 300);
-  s.heroes.forEach((h, i) => { autoAllocate(s, i); h.asc = [0, 0, 0]; });
-  for (let k = 0; k < 40; k++) {
-    let best = null, bc = null;
-    for (const h of s.heroes) for (const it of Object.values(h.gear)) { if (!it || !canUpgrade(it)) continue; const c = upgradeCost(it); if (c.gold <= s.gold && c.shards <= s.shards && (!bc || c.gold < bc.gold)) { best = it; bc = c; } }
-    if (!best) break; s.gold -= bc.gold; s.shards -= bc.shards; best.upgrade++; s.pushBlocked = false;
-  }
-  for (const h of s.heroes) for (const id of h.skills.bar.slice(0, skillSlots(s.level))) {
-    const rk = h.skills.ranks[id]; if (!id || rk >= MAX_SKILL_RANK) continue;
-    const c = skillUpgradeCost(rk, s.level); if (c.gold <= s.gold && c.shards <= s.shards) { s.gold -= c.gold; s.shards -= c.shards; h.skills.ranks[id]++; }
-  }
-  while (s.eggs > 0) hatchEgg(s);
-  for (const t of [1, 2, 3]) while (s.boxes[t] > 0) openBox(s, t);
-  const pl = s.pets.owned[s.pets.active]; const pc = petUpgradeCost(pl);
-  if (pl < 30 && s.shards > pc.shards * 3 && s.gold > pc.gold) { s.shards -= pc.shards; s.gold -= pc.gold; s.pets.owned[s.pets.active]++; }
+  optimiseAll(s);
   refreshStats(s);
   if (!s.run) {
     const t = dungeonTiers(s);

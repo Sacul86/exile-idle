@@ -12,13 +12,15 @@ A mobile-first auto-battle loot RPG that mixes Path of Exile-style character bui
 ## Character building
 - **Passive tree:** 249 nodes in a web of wheels, loops, bridges between classes and an outer ring, with 9 rule-changing keystones (Unwavering Strike, Iron Hide, Wind Dancer, Death's Mark, Elemental Conversion, Divine Bulwark, Lifebloom, Blood Pact, Glass Cannon). Points are capped late game, so you have to commit to a build.
 - **Class passives:** pick 1 of 2 at levels 15, 40 and 75.
-- **Skills:** generic and class skills that cast themselves, ranked up to R20, with a choice of 2 upgrades at ranks 5, 10 and 15.
+- **Skills:** 8 slots per hero and 67 skills (generic, class and tree skills, plus auras). They cast themselves, rank up to R20, and offer a choice of 2 upgrades at ranks 5, 10 and 15.
+- **Synergies:** skills apply statuses shared by the whole party (Burn, Bleed, Poison stacks, Chill, Shock, Ruin, Weaken), and other skills hit harder against them (Combust, Shatter, Lacerate, Venom Burst, Chain Lightning…). Auras buff the whole party while slotted.
+- **Tree skills & stones:** 14 skill nodes on the passive tree grant unique skills. 14 stone sockets take 💎 stones (dropped by bosses), which boost tree skills in their radius and all slotted skills of their element.
 - **Weapon mastery:** 30% more damage with your class's weapons.
 - **Armour sets:** a 5-piece set per class with 2/3/5-piece bonuses.
 - **Gear:** 10 slots, 6 rarities, item levels, T7–T1 affix tiers, +25 upgrades, reroll and promote crafting, and **12 Mythic uniques** with special powers.
 
 ## One-tap optimising
-- **⚡ Optimise party / hero:** spends tree points, picks open class passives, equips the best gear from the bag, sets the best skill bar (and open skill-upgrade choices) and switches to the best pet.
+- **⚡ Optimise party / hero:** hatches eggs, opens boxes, picks the best pet, spends tree points (valuing skill nodes and sockets), picks class passives, equips the best gear, picks synergy-aware skill bars for all 8 slots, sockets stones, and spends gold and shards on the best-value gear, skill and pet upgrades.
 - Separate buttons for **Equip best**, **Best skills**, **Best passives** and **Best pet**.
 - Optional **Auto-optimise on level-up** setting (Stats tab).
 

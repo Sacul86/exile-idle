@@ -6,8 +6,8 @@ import { itemStats } from './items.js';
 export const RESIST_CAP = 75;
 // Monsters outscale gear slightly, so tiers/crafting/passives matter.
 export let MONSTER_EXP = +(globalThis.process?.env?.MEXP || 1.5);
-const PARTY_HP = +(globalThis.process?.env?.PHP || 2.8);
-const PARTY_DMG = +(globalThis.process?.env?.PDMG || 2.3);
+const PARTY_HP = +(globalThis.process?.env?.PHP || 5);
+const PARTY_DMG = +(globalThis.process?.env?.PDMG || 2.7);
 
 // Monster template for a stage (used for both combat and gear scoring)
 export function monsterFor(stage, elite = false, kind = null) {

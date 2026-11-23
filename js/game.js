@@ -3,8 +3,8 @@
 import { S, SLOTS, MONSTERS_PER_STAGE, isBossStage, zoneFor, ZONES, RARITIES, STAGES_PER_ZONE } from './data.js';
 import { generateItem, salvageValue } from './items.js';
 import { SETS } from './classdata.js';
-import { NODES, pathTo, treePointsFree, allocatedSet, CLASS_BY_ID, ROLE_ORDER } from './tree.js';
-import { SKILL_BY_ID, skillSlots, unlockedSkills, skillEffective } from './skills.js';
+import { NODES, pathTo, treePointsFree, allocatedSet, CLASS_BY_ID, ROLE_ORDER, treeSkillIds, socketsInReach } from './tree.js';
+import { SKILL_BY_ID, skillSlots, unlockedSkills, skillEffective, TAG_INFO } from './skills.js';
 import { PETS, PET_BY_ID, SHOP, petBonus, petAttackMult, INVASION_TIME, worldBossToday, invasionStatus, invasionReward } from './pets.js';
 import { computeStats, monsterFor, xpToNext, evadeChance, armourReduction, targetSlot, combatLevel } from './stats.js';
 
@@ -19,7 +19,7 @@ export function newHero(role, cls = null) {
   gear.weapon = generateItem(1, { type: 'weapon', rarity: 0, cls });
   gear.weapon.isNew = false;
   if (role === 'tank') { gear.offhand = generateItem(1, { type: 'offhand', rarity: 0 }); gear.offhand.isNew = false; }
-  return { role, cls, gear, tree: [], asc: [], skills: { ranks: { cleave: 1 }, bar: ['cleave'], mods: {} } };
+  return { role, cls, gear, tree: [], asc: [], sockets: {}, skills: { ranks: { cleave: 1 }, bar: ['cleave'], mods: {} } };
 }
 
 export function newState() {
@@ -39,6 +39,7 @@ export function newState() {
     lastSave: Date.now(),
     combat: null,
     lootLog: [],
+    stones: [],
     ui: { hero: 2 },
   };
 }
@@ -46,7 +47,78 @@ export function newState() {
 // A hero as seen by the stat engine: hero fields + party-wide context
 export function charOf(state, i) {
   const h = state.heroes[i];
-  return { ...h, level: state.level, stage: state.stage, run: state.run, petBonus: petBonus(state) };
+  return { ...h, level: state.level, stage: state.stage, run: state.run, petBonus: partyBonus(state) };
+}
+
+// Pet bonus + always-on auras slotted by any hero (each aura counts once, strongest copy)
+export function auraBonus(state) {
+  const best = {};
+  state.heroes.forEach((h, i) => {
+    if (!h.cls) return;
+    for (const id of h.skills.bar.slice(0, skillSlots())) {
+      const sk = SKILL_BY_ID[id];
+      if (!sk || sk.kind !== 'aura') continue;
+      const ef = skillEffective(sk, h.skills.ranks[id] || 1, h.skills.mods[id]);
+      const boost = stoneBoosts(state, i)[id] || 1;
+      const f = ef.power * boost;
+      const stats = Object.fromEntries(Object.entries(sk.aura).map(([k, v]) => [k, v * f]));
+      if (ef.auraLife) stats.incLife = (stats.incLife || 0) + ef.auraLife;
+      if (ef.auraRegen) stats.regenPct = (stats.regenPct || 0) + ef.auraRegen;
+      if (ef.auraRes) stats.resist = (stats.resist || 0) + ef.auraRes;
+      if (!best[id] || f > best[id].f) best[id] = { f, stats };
+    }
+  });
+  const out = {};
+  for (const { stats } of Object.values(best)) for (const [k, v] of Object.entries(stats)) out[k] = (out[k] || 0) + v;
+  return out;
+}
+export function partyBonus(state) {
+  const out = { ...(petBonus(state) || {}) };
+  for (const [k, v] of Object.entries(auraBonus(state))) out[k] = (out[k] || 0) + v;
+  return out;
+}
+
+// ---------- Stones ----------
+const STONE_NAMES = { phys: 'Iron', fire: 'Ember', cold: 'Frost', lightning: 'Storm', poison: 'Venom', holy: 'Radiant', nature: 'Verdant', shadow: 'Void', any: 'Prismatic' };
+let stoneUid = Date.now() % 1e8;
+export function makeStone(level, tierBonus = 0) {
+  const tags = Object.keys(TAG_INFO);
+  const tag = Math.random() < 0.1 ? 'any' : tags[Math.floor(Math.random() * tags.length)];
+  const tier = Math.max(1, Math.min(6, 1 + Math.floor(level / 35) + tierBonus + (Math.random() < 0.15 ? 1 : 0)));
+  const power = Math.round(tier * 10 * (0.85 + Math.random() * 0.3) * (tag === 'any' ? 0.8 : 1));
+  return { uid: 's' + (++stoneUid).toString(36), tag, tier, power, name: `${STONE_NAMES[tag]} Stone` };
+}
+export function gainStone(state, level, tierBonus, ev) {
+  const st = makeStone(level, tierBonus);
+  state.stones.push(st);
+  ev && ev.push({ t: 'stone', stone: st });
+  return st;
+}
+// Skill power multipliers from a hero's socketed stones
+export function stoneBoosts(state, i) {
+  const h = state.heroes[i];
+  const out = {};
+  if (!h || !h.sockets) return out;
+  const allocated = new Set(h.tree);
+  const bar = h.skills.bar.filter(Boolean);
+  for (const [sock, uid] of Object.entries(h.sockets)) {
+    if (!allocated.has(sock)) continue;
+    const stone = state.stones.find((x) => x.uid === uid);
+    if (!stone) continue;
+    // tree skills inside the socket's radius
+    for (const nid of socketsInReach(sock)) {
+      if (!allocated.has(nid)) continue;
+      const sk = SKILL_BY_ID[NODES[nid].skill];
+      const match = stone.tag === 'any' || (sk.tags || []).includes(stone.tag);
+      out[sk.id] = (out[sk.id] || 1) + stone.power / 100 * (match ? 2 : 1);
+    }
+    // smaller boost to every slotted skill of the stone's element
+    for (const id of bar) {
+      const sk = SKILL_BY_ID[id];
+      if (sk && (stone.tag === 'any' || (sk.tags || []).includes(stone.tag))) out[id] = (out[id] || 1) + stone.power / 300;
+    }
+  }
+  return out;
 }
 export const partyReady = (state) => state.heroes.every((h) => h.cls);
 
@@ -72,7 +144,8 @@ export function load() {
       st.heroes.forEach((h) => { h.tree = []; });
       st.treeVersion = TREE_VERSION;
     }
-    st.heroes.forEach((h) => { h.tree = (h.tree || []).filter((id) => NODES[id]); h.asc = h.asc || []; h.skills.mods = h.skills.mods || {}; });
+    st.heroes.forEach((h) => { h.tree = (h.tree || []).filter((id) => NODES[id]); h.asc = h.asc || []; h.sockets = h.sockets || {}; h.skills.mods = h.skills.mods || {}; });
+    st.stones = st.stones || [];
     st.pets = st.pets || base.pets;
     st.invasion = st.invasion || base.invasion;
     st.ui = st.ui || base.ui;
@@ -188,12 +261,13 @@ function spawn(state) {
   return m;
 }
 
-const heroCombat = (stats) => ({ hp: stats.maxLife, stats, pTimer: Math.random() * 0.3, cds: {}, buffs: {}, shield: null, dead: 0 });
+const heroCombat = (stats) => ({ hp: stats.maxLife, stats, pTimer: Math.random() * 0.3, cds: {}, buffs: {}, shield: null, dead: 0, boost: {} });
 
 export function ensureCombat(state) {
   if (!state.combat) {
     const hs = state.heroes.map((_, i) => heroCombat(computeStats(charOf(state, i))));
     state.combat = { heroes: hs, monster: spawn(state), wipe: 0, petTimer: 0, phoenixCd: 0 };
+    hs.forEach((h, i) => { h.boost = stoneBoosts(state, i); });
     summarise(state);
   }
   return state.combat;
@@ -218,6 +292,7 @@ export function refreshStats(state) {
   c.heroes.forEach((h, i) => {
     const old = h.stats.maxLife;
     h.stats = computeStats(charOf(state, i));
+    h.boost = stoneBoosts(state, i);
     if (old > 0 && !h.dead) h.hp = Math.min(h.stats.maxLife, h.hp * (h.stats.maxLife / old));
   });
   summarise(state);
@@ -250,6 +325,26 @@ export function tick(state, dt, ev) {
   const m = c.monster;
   c.phoenixCd = Math.max(0, c.phoenixCd - dt);
   if (m.expose) { m.expose.t -= dt; if (m.expose.t <= 0) m.expose = null; }
+  const ms = m.st || (m.st = {});
+  for (const k of Object.keys(ms)) { ms[k].t -= dt; if (ms[k].t <= 0) delete ms[k]; }
+  const takenMult = () => 1 + (m.expose ? m.expose.v : 0) + (ms.shock ? ms.shock.v : 0) + (ms.ruin ? ms.ruin.v : 0);
+  const dotDps = (ms.burn ? ms.burn.dps : 0) + (ms.bleed ? ms.bleed.dps : 0) + (ms.poison ? ms.poison.stacks * ms.poison.per : 0);
+  if (dotDps > 0 && m.hp > 0) {
+    const d = dotDps * takenMult() * dt;
+    m.hp -= d;
+    if (run && run.kind === 'invasion') run.damage += d;
+    c.dotAcc = (c.dotAcc || 0) + d;
+    if ((c.dotT = (c.dotT || 0) + dt) > 1) { ev && ev.push({ t: 'dot', dmg: c.dotAcc }); c.dotAcc = 0; c.dotT = 0; }
+  }
+  // apply statuses from a skill hit
+  const applyStatus = (applies, hit, rm, dur) => {
+    for (const [k, v] of Object.entries(applies)) {
+      if (k === 'burn' || k === 'bleed') { const dps = hit * v * rm; if (!ms[k] || ms[k].dps < dps || ms[k].t < 1) ms[k] = { dps: Math.max(dps, ms[k] ? ms[k].dps * 0.5 : 0), t: k === 'burn' ? 4 : 5 }; }
+      else if (k === 'poison') { const p = ms.poison || { stacks: 0, per: 0, t: 0 }; p.stacks = Math.min(30, p.stacks + v); p.per = Math.max(p.per, hit * 0.06 * rm); p.t = 5; ms.poison = p; }
+      else if (k === 'chill') ms.chill = { t: Math.max(ms.chill ? ms.chill.t : 0, v) };
+      else { const val = v * (1 + (rm - 1) * 0.3); if (!ms[k] || ms[k].v <= val) ms[k] = { v: Math.min(0.7, val), t: dur || 4 }; else ms[k].t = Math.max(ms[k].t, dur || 4); }
+    }
+  };
 
   // revive timers, regen, buffs
   c.heroes.forEach((h, i) => {
@@ -278,9 +373,18 @@ export function tick(state, dt, ev) {
     const st = h.stats;
     const dmgBuff = 1 + (h.buffs.dmg ? h.buffs.dmg.v : 0) + (h.shield && h.shield.dmg ? h.shield.dmg : 0);
     const apsBuff = 1 + (h.buffs.aps ? h.buffs.aps.v : 0);
-    const strike = (mult, eleBoost = 1, critBonus = 0, leechBonus = 0, forceCrit = false) => {
-      const exposeMult = 1 + (m.expose ? m.expose.v : 0) + (m.frozen > 0 && m.brittle ? m.brittle : 0);
-      let dmg = (rr(st.physMin, st.physMax) + rr(st.eleMin, st.eleMax) * eleBoost) * mult * dmgBuff * exposeMult;
+    const strike = (mult, eleBoost = 1, critBonus = 0, leechBonus = 0, forceCrit = false, sk = null, ef = null) => {
+      let vsMult = 1;
+      if (sk) {
+        for (const [k, v] of Object.entries(sk.vs || {})) if (ms[k] || (k === 'chill' && m.frozen > 0)) vsMult += v;
+        if (sk.perPoison && ms.poison) vsMult += ms.poison.stacks * sk.perPoison;
+        if (sk.lowHp && m.hp / m.maxHp < 0.3) vsMult += sk.lowHp;
+      }
+      const exposeMult = takenMult() + (m.frozen > 0 && m.brittle ? m.brittle : 0);
+      const base = (rr(st.physMin, st.physMax) + rr(st.eleMin, st.eleMax) * eleBoost) * dmgBuff;
+      let dmg = base * mult * exposeMult * vsMult;
+      if (sk && sk.consume && ms[sk.consume]) { dmg += ms[sk.consume].dps * ms[sk.consume].t * 1.5; delete ms[sk.consume]; }
+      if (sk && sk.applies) applyStatus(sk.applies, base * Math.max(1, mult), ef ? ef.rankMult : 1, ef ? ef.duration : 0);
       const crit = forceCrit || Math.random() * 100 < st.crit;
       dmg *= crit ? (st.critMulti + critBonus) / 100 : st.nonCritMult;
       m.hp -= dmg;
@@ -312,7 +416,8 @@ export function tick(state, dt, ev) {
       const ef = skillEffective(sk, rank, hero.skills.mods[id]);
       h.cds[id] = (h.cds[id] ?? ef.cooldown * cdMult * 0.5) - dt;
       if (h.cds[id] > 0) continue;
-      const p = ef.power * (1 + st.skillPow / 100);
+      if (sk.kind === 'aura') continue;
+      const p = ef.power * (1 + st.skillPow / 100) * (h.boost[id] || 1);
       const healBoost = st.healMult;
       if (sk.kind === 'heal') {
         const low = lowestAlly(c);
@@ -326,19 +431,28 @@ export function tick(state, dt, ev) {
         if (ef.dmgBuff) h.buffs.dmg = { v: Math.max(ef.dmgBuff, h.buffs.dmg ? h.buffs.dmg.v : 0), t: 4 };
         if (ef.shield) c.heroes.forEach((a) => { if (!a.dead) a.shield = { v: a.stats.maxLife * ef.shield, t: 6, dmg: 0 }; });
       } else if (sk.kind === 'hit') {
-        for (let n = 0; n < ef.casts; n++) for (let k = 0; k < ef.hits; k++) strike(p, sk.ele ? 1.5 : 1, ef.critm, ef.leech, ef.alwaysCrit);
+        for (let n = 0; n < ef.casts; n++) for (let k = 0; k < ef.hits; k++) strike(p, sk.ele ? 1.5 : 1, ef.critm, ef.leech, ef.alwaysCrit, sk, ef);
         if (ef.expose) m.expose = { v: ef.expose, t: ef.exposeDur };
+        if (sk.partyHeal) c.heroes.forEach((a, j) => { if (!a.dead) healAlly(i, j, a.stats.maxLife * sk.partyHeal * healBoost); });
+      } else if (sk.kind === 'debuff') {
+        applyStatus(sk.applies || {}, st.avgHit, ef.rankMult, ef.duration);
+        if (ef.hitAlso) strike(ef.hitAlso, 1, 0, 0, false);
+        if (sk.selfBuff) for (const [k, v] of Object.entries(sk.selfBuff)) h.buffs[k] = { v: v * ef.rankMult, t: ef.duration };
       } else if (sk.kind === 'freeze') {
-        for (let n = 0; n < ef.casts; n++) strike(p);
+        for (let n = 0; n < ef.casts; n++) strike(p, 1, 0, 0, false, sk, ef);
         m.frozen = ef.duration * (m.boss && !ef.bossFull ? 0.5 : 1) * (m.world ? 0.4 : 1);
         m.brittle = ef.brittle;
         m.stunned = !!sk.stun;
       } else if (sk.kind === 'shield') {
         const targets = sk.party ? c.heroes.filter((a) => !a.dead) : [h];
         targets.forEach((a) => { a.shield = { v: a.stats.maxLife * p * (sk.party ? healBoost : 1), t: ef.duration, dmg: ef.shieldDmg }; });
+        if (sk.applies) applyStatus(sk.applies, st.avgHit, ef.rankMult, ef.duration);
       } else if (sk.kind === 'buff') {
-        if (sk.buffs) for (const [k, v] of Object.entries(sk.buffs)) h.buffs[k] = { v: v * p, t: ef.duration };
-        else h.buffs[sk.stat] = { v: p, t: ef.duration };
+        const targets = sk.party ? c.heroes.filter((a) => !a.dead) : [h];
+        for (const a of targets) {
+          if (sk.buffs) for (const [k, v] of Object.entries(sk.buffs)) a.buffs[k] = { v: Math.min(k === 'dr' ? 0.75 : 99, v * p), t: ef.duration };
+          else a.buffs[sk.stat] = { v: p, t: ef.duration };
+        }
       }
       if (ef.heal) healAlly(i, i, st.maxLife * ef.heal);
       h.cds[id] = ef.cooldown * cdMult;
@@ -354,7 +468,7 @@ export function tick(state, dt, ev) {
       c.petTimer = 0;
       const lvl = state.pets.owned[pet] || 1;
       const avg = c.heroes.reduce((a, h) => a + h.stats.avgHit, 0) / c.heroes.length;
-      const dmg = avg * petAttackMult(lvl) * rr(0.9, 1.1);
+      const dmg = avg * petAttackMult(lvl) * rr(0.9, 1.1) * takenMult();
       m.hp -= dmg;
       if (run && run.kind === 'invasion') run.damage += dmg;
       ev && ev.push({ t: 'petHit', dmg });
@@ -385,6 +499,7 @@ export function tick(state, dt, ev) {
     if (Math.random() * 100 < st.block) { ev && ev.push({ t: 'block', i }); return; }
     const phys = raw * m.physShare, ele = raw - phys;
     let dmg = phys * (1 - armourReduction(st.armour, phys)) + ele * (1 - st.resist / 100);
+    if (ms.weaken) dmg *= 1 - ms.weaken.v;
     dmg *= (1 - st.dr) * (1 - (h.buffs.dr ? h.buffs.dr.v : 0));
     if (h.shield) { const a = Math.min(h.shield.v, dmg); h.shield.v -= a; dmg -= a; }
     h.hp -= dmg;
@@ -410,7 +525,7 @@ export function tick(state, dt, ev) {
       if (state.combat !== c || c.wipe > 0) return;
     }
   }
-  m.timer += dt;
+  m.timer += ms.chill ? dt / 1.3 : dt;
   while (m.timer >= m.interval && c.wipe <= 0 && state.combat === c) {
     m.timer -= m.interval;
     const t = target();
@@ -491,6 +606,8 @@ function onKill(state, m, ev) {
     if (Math.random() < 0.1 + run.tier * 0.005) dropItems(state, 1, lvl + 3, 0, 5, ev);
     dropItems(state, 3, lvl + 3, 300, 3, ev, 0.5);
     maybeEgg(state, 0.3, ev);
+    gainStone(state, lvl, 1, ev);
+    if (Math.random() < 0.3) gainStone(state, lvl, 1, ev);
     const shards = Math.ceil(150 * (1 + run.tier));
     state.shards += shards;
     state.raidsCleared[run.tier] = (state.raidsCleared[run.tier] || 0) + 1;
@@ -502,6 +619,7 @@ function onKill(state, m, ev) {
     if (m.boss) {
       dropItems(state, 4, lvl + 2, 300, 2, ev, 0.25);
       maybeEgg(state, 0.1, ev);
+      if (Math.random() < 0.6) gainStone(state, lvl, 0, ev);
       const first = !state.dungeonsCleared[run.tier];
       const sigil = first || Math.random() < 0.35;
       if (sigil) state.sigils++;
@@ -530,6 +648,7 @@ function onKill(state, m, ev) {
     state.bossesBeaten[zi] = (state.bossesBeaten[zi] || 0) + 1;
     if (first || Math.random() < 0.35) { state.keys++; ev && ev.push({ t: 'key', first }); }
     maybeEgg(state, first ? 0.5 : 0.04, ev);
+    if (first || Math.random() < 0.25) gainStone(state, state.stage, 0, ev);
   }
   const needed = isBossStage(state.stage) ? 1 : MONSTERS_PER_STAGE;
   if (state.kills >= needed) {
@@ -563,14 +682,20 @@ export function syncSkills(state) {
   const fresh = [];
   state.heroes.forEach((h, hi) => {
     if (!h.cls) return;
-    for (const sk of unlockedSkills(state.level, h.cls)) {
+    const avail = [...unlockedSkills(state.level, h.cls), ...treeSkillIds(h).map((id) => SKILL_BY_ID[id])];
+    for (const sk of avail) {
       if (!h.skills.ranks[sk.id]) { h.skills.ranks[sk.id] = 1; fresh.push({ sk, hero: hi }); placeSkill(state, h, sk); }
     }
-    // remove skills that no longer exist or belong to another class
-    h.skills.bar = h.skills.bar.map((id) => (id && SKILL_BY_ID[id] && (!SKILL_BY_ID[id].cls || SKILL_BY_ID[id].cls === h.cls) ? id : null));
+    // drop skills the hero can no longer use (other class, unallocated tree node)
+    const ok = new Set(avail.map((x) => x.id));
+    h.skills.bar = h.skills.bar.map((id) => (id && ok.has(id) ? id : null));
   });
   return fresh;
 }
+export const availableSkills = (state, i) => {
+  const h = state.heroes[i];
+  return [...unlockedSkills(state.level, h.cls), ...treeSkillIds(h).map((id) => SKILL_BY_ID[id])];
+};
 function placeSkill(state, h, sk) {
   const bar = h.skills.bar, slots = skillSlots(state.level);
   for (let i = 0; i < slots; i++) if (!bar[i]) { bar[i] = sk.id; return; }
@@ -593,7 +718,15 @@ export function autoAllocate(state, hi, maxPoints = Infinity) {
       const path = pathTo(ch, id);
       if (!path.length || path.length > 4 || path.length > treePointsFree(ch)) continue;
       const p = computeStats({ ...ch, tree: [...h.tree, ...path] }).power;
-      const score = (p / base - 1) / path.length;
+      // skill nodes and stone sockets aren't stat nodes: give them an estimated value
+      let extra = 0;
+      const socketed = state.heroes.reduce((a, hh) => a + Object.keys(hh.sockets || {}).length, 0);
+      for (const nid of path) {
+        const n = NODES[nid];
+        if (n.kind === 'skill') extra += 0.06;
+        if (n.kind === 'socket') extra += state.stones.length > socketed && socketsInReach(nid).some((sn) => h.tree.includes(sn) || path.includes(sn)) ? 0.03 : 0.003;
+      }
+      const score = (p / base - 1 + extra) / path.length;
       if (score > bestScore) { bestScore = score; best = path; }
     }
     if (!best) break;
@@ -716,6 +849,7 @@ export function openBox(state, tier, ev) {
     dropItems(state, 1, lvl + 2, 0, Math.random() < 0.25 ? 5 : 4, evs);
     dropItems(state, 1, lvl + 2, 0, 3, evs, 1);
     if (Math.random() < 0.3) { state.eggs++; extras.push('🥚 Pet Egg'); }
+    if (Math.random() < 0.5) { const st = gainStone(state, lvl, 1); extras.push(`💎 ${st.name} (T${st.tier})`); }
   }
   const items = [];
   for (const l of state.lootLog) { if (l === mark) break; items.push(l); }

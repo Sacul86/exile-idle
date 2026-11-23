@@ -1,5 +1,6 @@
 // Interactive passive tree: SVG with drag-to-pan, pinch/wheel zoom, tap to select.
-import { TREE, NODES, CLASS_BY_ID, allocatedSet, isAllocatable, pathTo } from './tree.js';
+import { TREE, NODES, CLASS_BY_ID, allocatedSet, isAllocatable, pathTo, SOCKET_RADIUS } from './tree.js';
+import { SKILL_BY_ID, TAG_INFO } from './skills.js';
 
 const view = { k: 0.9, tx: null, ty: null };
 let selected = null;
@@ -7,7 +8,7 @@ let selected = null;
 export const getSelected = () => selected;
 export const setSelected = (id) => { selected = id; };
 
-export function renderTreeSvg(svgWrap, state, onSelect) {
+export function renderTreeSvg(svgWrap, state, onSelect, stones = []) {
   const w = svgWrap.clientWidth || 360;
   const h = svgWrap.clientHeight || 420;
   if (view.tx == null) {
@@ -31,12 +32,22 @@ export function renderTreeSvg(svgWrap, state, onSelect) {
     const on = set.has(n.id);
     const avail = !on && isAllocatable(state, n.id, set);
     const pv = path.has(n.id);
-    const r = n.kind === 'keystone' ? 22 : n.kind === 'start' ? 24 : n.kind === 'notable' ? 15 : 9;
+    const r = n.kind === 'keystone' ? 22 : n.kind === 'start' ? 24 : n.kind === 'notable' ? 15 : n.kind === 'skill' ? 17 : n.kind === 'socket' ? 13 : 9;
+    let icon = n.icon;
+    let extra = '';
+    if (n.kind === 'skill') icon = SKILL_BY_ID[n.skill].icon;
+    if (n.kind === 'socket') {
+      const uid = (state.sockets || {})[n.id];
+      const stone = uid && stones.find((x) => x.uid === uid);
+      icon = stone ? '💎' : '';
+      extra = `<rect x="-${r}" y="-${r}" width="${r * 2}" height="${r * 2}" transform="rotate(45)" class="sock" style="--sc:${stone ? (stone.tag === 'any' ? '#fff' : TAG_INFO[stone.tag].color) : '#574634'}"/>`;
+      if (selected === n.id) extra = `<circle r="${SOCKET_RADIUS * S / 1}" class="sock-range"/>` + extra;
+    }
     const cls = ['n', n.kind, on ? 'on' : '', avail ? 'av' : '', pv ? 'pv' : '', selected === n.id ? 'sel' : ''].join(' ');
     nodes += `<g class="${cls}" data-node="${n.id}" transform="translate(${n.x * S},${n.y * S})">
       <circle r="${r + 14}" class="hit"/>
-      <circle r="${r}" style="--c:${clsColor(n.id)}"/>
-      ${n.icon ? `<text dy="0.35em" font-size="${r}">${n.icon}</text>` : ''}
+      ${n.kind === 'socket' ? extra : `<circle r="${r}" style="--c:${clsColor(n.id)}"/>`}
+      ${icon ? `<text dy="0.35em" font-size="${r}">${icon}</text>` : ''}
     </g>`;
   }
   svgWrap.innerHTML = `<svg width="100%" height="100%"><g id="tree-g" transform="translate(${view.tx},${view.ty}) scale(${view.k})">${edges}${nodes}</g></svg>`;

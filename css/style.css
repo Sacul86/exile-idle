@@ -417,3 +417,25 @@ h2 { font-weight: 800; letter-spacing: .06em; text-transform: uppercase; font-si
 .rank-S { color: #ff8a2b; text-shadow: 0 0 16px #ff8a2b; } .rank-A { color: #b46bff; } .rank-B { color: #f2d64b; } .rank-C { color: #6b8cff; } .rank-D { color: #c8c8c8; }
 .opt-row { display: flex; gap: 6px; margin-bottom: 10px; }
 .opt-row .btn { flex: 1; }
+/* Skills 2.0 */
+.skillbar.grid8 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; justify-items: center; }
+.skillbar.grid8 .sk { width: 60px; height: 60px; font-size: 28px; }
+.tagbar .chip { padding: 4px 7px; }
+.syn { font-size: 11px; color: #c8b07a; }
+.ni-syn { font-size: 11px; color: #c8b07a; padding-left: 6px; }
+.tagicons { font-size: 11px; }
+.cls-tag.tree { background: #2f6a3a; } .cls-tag.aura { background: #6a3a8a; }
+.pc-skills { flex-wrap: wrap; gap: 1px; }
+.sk.mini { width: 14px; height: 14px; font-size: 9px; border-radius: 3px; }
+/* Stones & sockets */
+.stone-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.stone { border: 1px solid var(--sc); border-radius: 8px; padding: 5px 7px; background: linear-gradient(180deg, color-mix(in srgb, var(--sc) 16%, #17130f), #15110d); }
+.stone b { display: block; font-size: 12px; color: var(--sc); }
+.stone small { color: var(--muted); font-size: 10px; }
+.sock { fill: #15110d; stroke: var(--sc); stroke-width: 4; }
+.n.on .sock { fill: #2a2016; }
+.n.av .sock { stroke: #e8dcc8; }
+.sock-range { fill: rgba(154, 216, 255, 0.06); stroke: rgba(154, 216, 255, 0.5); stroke-width: 2; stroke-dasharray: 10 8; }
+.n.skill circle:not(.hit) { stroke: #3fd16b; stroke-width: 4; fill: #12241a; }
+.n.on.skill circle:not(.hit) { fill: #2f8a4a; stroke: #9affb8; }
+.ni-k.skill { color: #3fd16b; } .ni-k.socket { color: #9ad8ff; }

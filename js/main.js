@@ -6,21 +6,21 @@ import {
 import { computeStats, xpToNext, targetSlot } from './stats.js';
 import {
   CLASSES, CLASS_BY_ID, NODES, KEYSTONES, ROLES, ROLE_ORDER, treePointsFree, treePointsTotal, pathTo, canRefund,
-  nodeLines, refundCost, resetCost, allocatedSet,
+  nodeLines, refundCost, resetCost, allocatedSet, TREE_SKILLS, socketsInReach,
 } from './tree.js';
-import { SKILLS, skillsFor, SKILL_BY_ID, skillSlots, skillUpgradeCost, MAX_SKILL_RANK, MILESTONES, skillMods, skillEffective, skillDescFull, respecModCost } from './skills.js';
+import { SKILLS, skillsFor, SKILL_BY_ID, skillSlots, skillUpgradeCost, MAX_SKILL_RANK, MILESTONES, skillMods, skillEffective, skillDescFull, respecModCost, synergyLines, TAG_INFO, STATUS, SKILL_SLOTS } from './skills.js';
 import { Arena } from './fx.js';
 import { CLASS_WEAPONS, WEAPON_MASTERY, SETS, SET_SLOTS, setCounts, ASCENDANCY, ASC_LEVELS, ascRespecCost, isClassWeapon } from './classdata.js';
 import { PETS, PET_BY_ID, PET_MAX_LEVEL, petUpgradeCost, bonusText, invasionStatus, worldBossToday, INVASION_TIME, BOX_INFO, SHOP } from './pets.js';
-import { equipBest, bestSkills, bestAscendancy, bestPet, optimiseAll, describeResult } from './optimize.js';
+import { equipBest, bestSkills, bestAscendancy, bestPet, bestStones, optimiseAll, describeResult } from './optimize.js';
 import { renderTreeSvg, zoom, centerOn, getSelected, setSelected, resetView } from './treeview.js';
 import {
   newState, newHero, load, save, tick, ensureCombat, refreshStats, simulate, salvage, equipFromBag, unequip, BAG_SIZE, SAVE_KEY,
   startRun, abandonRun, syncSkills, dungeonTiers, raidUnlocked, dungeonLevel, raidLevel, dungeonName, raidName, DUNGEON,
-  enrageMult, autoAllocate, charOf, partyReady, bestHeroFor, hatchEgg, openBox, buyShop,
+  enrageMult, autoAllocate, charOf, partyReady, bestHeroFor, hatchEgg, openBox, buyShop, availableSkills, stoneBoosts,
 } from './game.js';
 
-export const VERSION = '2026.11.23-c';
+export const VERSION = '2026.11.23-d';
 let state = load() || newState();
 const arena = new Arena();
 ensureCombat(state);
@@ -28,6 +28,7 @@ let tab = 'battle';
 let heroSub = 'gear';
 let bagFilter = -1;
 let skillPick = null;
+let skillTag = 'all';
 let modalCtx = null;
 const $ = (s) => document.querySelector(s);
 const view = $('#view');
@@ -61,7 +62,7 @@ function zoneLabel(stage) {
   const cycle = Math.floor(zoneIndex(stage) / ZONES.length);
   return zoneFor(stage).name + (cycle ? ` <span class="muted">· Cycle ${cycle + 1}</span>` : '');
 }
-function afterChange() { refreshStats(state); save(state); render(); }
+function afterChange() { syncSkills(state); refreshStats(state); save(state); render(); }
 const fmtTime = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? `${h}h ${m}m` : `${m}m ${s % 60}s`; };
 
 // ---------- HUD ----------
@@ -129,7 +130,7 @@ function renderBattle() {
         <div class="pc-body">
           <div class="pc-name"><span class="role-ic">${ROLES[h.role].icon}</span> ${heroName(i)}</div>
           <div class="bar hp small"><div class="fill" id="php-${i}"></div></div>
-          <div class="pc-skills">${h.skills.bar.slice(0, skillSlots(state.level)).map((id) => id && SKILL_BY_ID[id] ? `<span class="sk mini"><span>${SKILL_BY_ID[id].icon}</span><i class="cd" data-cd="${i}:${id}"></i></span>` : '').join('')}</div>
+          <div class="pc-skills">${h.skills.bar.slice(0, SKILL_SLOTS).map((id) => id && SKILL_BY_ID[id] ? `<span class="sk mini"><span>${SKILL_BY_ID[id].icon}</span><i class="cd" data-cd="${i}:${id}"></i></span>` : '').join('')}</div>
         </div>
       </div>`).join('')}</div>
     <div class="opt-row"><button class="btn small primary" data-act="opt-party">⚡ Optimise party</button></div>
@@ -270,6 +271,10 @@ function renderTree(body) {
       <div class="tree-zoom"><button class="btn small" data-act="zin">＋</button><button class="btn small" data-act="zout">－</button><button class="btn small" data-act="zhome">⌂</button></div>
     </div>
     <div id="node-info" class="panel node-info"></div>
+    <div class="panel"><h2>💎 Stones <span class="muted" style="float:right">${state.stones.length}</span></h2>
+      <div class="muted" style="font-size:11px;margin-bottom:6px">Socket stones into 💠 socket nodes on the tree. A stone boosts tree skills inside its radius (double if the element matches) and gives a smaller boost to all slotted skills of its element. Stones drop from zone bosses, vault Wardens, raids and Box III.</div>
+      <div class="stone-list">${state.stones.slice().sort((a, b) => b.power - a.power).map((st) => stoneChip(st)).join('') || '<span class="muted">No stones yet.</span>'}</div>
+      <button class="btn small" style="width:100%;margin-top:6px" data-act="stones-best" ${state.stones.length ? '' : 'disabled'}>💎 Socket best stones</button></div>
     <p class="muted" style="font-size:11px">Each hero has their own tree. Points: 1 per level up to 100, then 1 per 4 levels (${treePointsTotal(state.level)} total). Drag to move, pinch to zoom.</p>
     <button class="btn danger" style="width:100%" data-act="tree-reset" ${H().tree.length && state.gold >= resetCost(state.level) ? '' : 'disabled'}>Reset tree · 🪙${fmt(resetCost(state.level))}</button>`;
   drawTree();
@@ -279,8 +284,17 @@ function drawTree() {
   const wrap = $('#tree-svg');
   if (!wrap) return;
   if (treeHero !== HI()) { resetView(); treeHero = HI(); }
-  renderTreeSvg(wrap, C(), (id) => { setSelected(id); drawTree(); });
+  renderTreeSvg(wrap, C(), (id) => { setSelected(id); drawTree(); }, state.stones);
   renderNodeInfo();
+}
+function stoneOwner(uid) {
+  for (let i = 0; i < 3; i++) for (const [sock, u] of Object.entries(state.heroes[i].sockets || {})) if (u === uid) return { i, sock };
+  return null;
+}
+function stoneChip(st, act = '') {
+  const t = st.tag === 'any' ? { icon: '🌈', color: '#fff' } : TAG_INFO[st.tag];
+  const own = stoneOwner(st.uid);
+  return `<div class="stone" style="--sc:${t.color}" ${act}><b>💎 ${st.name}</b><small>T${st.tier} · +${st.power}% ${t.icon}${own ? ` · ${heroName(own.i)}` : ''}</small></div>`;
 }
 function renderNodeInfo() {
   const el = $('#node-info');
@@ -305,34 +319,60 @@ function renderNodeInfo() {
       ? `<button class="btn danger" data-act="refund" ${state.gold >= c ? '' : 'disabled'}>Refund · 🪙${fmt(c)}</button>`
       : '<span class="muted" style="font-size:11px">Refund the nodes beyond this first.</span>';
   }
-  el.innerHTML = `<div class="ni-head"><span class="ni-k ${n.kind}">${kindLabel}</span><b>${n.icon ? n.icon + ' ' : ''}${title}</b>${has ? ' <span class="good">✓</span>' : ''}</div>
-    ${nodeLines(n, own).map((l) => `<div class="ni-line">${l}</div>`).join('')}
+  let extra = '';
+  if (n.kind === 'skill') {
+    const sk = SKILL_BY_ID[n.skill];
+    extra = `<div class="ni-line"><b>${sk.icon} ${sk.name}</b>: ${skillDescFull(sk, H().skills.ranks[sk.id] || 1, H().skills.mods[sk.id])}</div>
+      ${synergyLines(sk).map((l) => `<div class="ni-syn">${l}</div>`).join('')}`;
+  }
+  if (n.kind === 'socket') {
+    const uid = (H().sockets || {})[id];
+    const stone = uid && state.stones.find((x) => x.uid === uid);
+    const near = socketsInReach(id).map((nid) => SKILL_BY_ID[NODES[nid].skill]);
+    extra = `<div class="ni-line">In radius: ${near.map((sk) => `${sk.icon} ${sk.name}`).join(', ') || 'no tree skills'}</div>
+      ${stone ? stoneChip(stone) : '<div class="muted" style="font-size:12px">Empty socket</div>'}
+      ${has ? `<div class="ni-btns"><button class="btn small" data-act="socket-pick">${stone ? 'Change stone' : 'Socket a stone'}</button>${stone ? '<button class="btn small danger" data-act="socket-clear">Remove</button>' : ''}</div>` : ''}`;
+  }
+  const kl = { skill: 'Tree skill', socket: 'Stone socket' }[n.kind] || kindLabel;
+  const tl = n.kind === 'skill' ? SKILL_BY_ID[n.skill].name : n.kind === 'socket' ? 'Stone Socket' : title;
+  el.innerHTML = `<div class="ni-head"><span class="ni-k ${n.kind}">${kl}</span><b>${n.icon ? n.icon + ' ' : ''}${tl}</b>${has ? ' <span class="good">✓</span>' : ''}</div>
+    ${n.kind === 'skill' || n.kind === 'socket' ? '' : nodeLines(n, own).map((l) => `<div class="ni-line">${l}</div>`).join('')}
+    ${extra}
     <div class="ni-btns">${btns}</div>`;
 }
 
 function renderSkills(body) {
   const h = H();
-  const slots = skillSlots(state.level);
-  const bar = Array.from({ length: 4 }, (_, i) => h.skills.bar[i]);
+  const slots = SKILL_SLOTS;
+  const bar = Array.from({ length: slots }, (_, i) => h.skills.bar[i]);
+  const avail = new Set(availableSkills(state, HI()).map((x) => x.id));
+  const boosts = stoneBoosts(state, HI());
+  let list = [...skillsFor(h.cls).filter((sk) => !sk.tree), ...TREE_SKILLS[h.cls].map((id) => SKILL_BY_ID[id]), ...SKILLS.filter((sk) => sk.tree && avail.has(sk.id) && !TREE_SKILLS[h.cls].includes(sk.id))];
+  if (skillTag !== 'all') list = list.filter((sk) => skillTag === 'aura' ? sk.kind === 'aura' : skillTag === 'heal' ? ['heal', 'shield'].includes(sk.kind) : (sk.tags || []).includes(skillTag));
+  list.sort((x, y) => (avail.has(y.id) ? 1 : 0) - (avail.has(x.id) ? 1 : 0) || (x.unlock || 999) - (y.unlock || 999));
+  const tags = ['all', ...Object.keys(TAG_INFO), 'aura', 'heal'];
   body.innerHTML = `
     <div class="opt-row"><button class="btn small" data-act="skills-best">✴️ Best skills</button><button class="btn small" data-act="skills-best-all">✴️ Best skills (party)</button></div>
-    <p class="muted" style="font-size:12px;margin-top:0">Skills cast themselves. Tap a slot, then a skill. Tap a skill to rank it up; at ranks 5, 10 and 15 pick one of two upgrades. Slots: 2 → 3 at Lv 20 → 4 at Lv 50.</p>
-    <div class="skillbar big">${bar.map((id, i) => i >= slots
-      ? `<div class="sk locked">🔒<small>Lv ${i === 2 ? 20 : 50}</small></div>`
-      : `<div class="sk ${skillPick === i ? 'picking' : ''}" data-act="pick-slot" data-i="${i}">${id && SKILL_BY_ID[id] ? `<span>${SKILL_BY_ID[id].icon}</span><small>${h.skills.ranks[id]}</small>` : '+'}</div>`).join('')}</div>
-    ${skillPick != null ? `<div class="pick-hint">Choose a skill for slot ${skillPick + 1} <button class="btn small" data-act="pick-cancel">Cancel</button></div>` : ''}
-    ${skillsFor(h.cls).map((sk) => {
+    <div class="skillbar grid8">${bar.map((id, i) => `<div class="sk ${skillPick === i ? 'picking' : ''}" data-act="pick-slot" data-i="${i}">${id && SKILL_BY_ID[id] ? `<span>${SKILL_BY_ID[id].icon}</span><small>${h.skills.ranks[id]}</small>` : '+'}</div>`).join('')}</div>
+    ${skillPick != null ? `<div class="pick-hint">Choose a skill for slot ${skillPick + 1} <button class="btn small" data-act="pick-cancel">Cancel</button> ${h.skills.bar[skillPick] ? '<button class="btn small" data-act="slot-clear">Empty slot</button>' : ''}</div>` : ''}
+    <div class="toolbar tagbar">${tags.map((t) => `<span class="chip ${skillTag === t ? 'on' : ''}" data-act="skill-tag" data-t="${t}">${t === 'all' ? 'All' : t === 'aura' ? '🔆 Aura' : t === 'heal' ? '💚 Support' : TAG_INFO[t].icon}</span>`).join('')}</div>
+    <p class="muted" style="font-size:11px;margin-top:0">Statuses are shared: one hero can Burn, Chill, Shock or Weaken and the whole party profits. Look for skills that apply a status and skills that hit harder against it.</p>
+    ${list.map((sk) => {
       const rank = h.skills.ranks[sk.id];
-      const tag = sk.cls ? '<span class="cls-tag">CLASS</span> ' : '';
-      if (!rank) return `<div class="node locked"><div class="ic">${sk.icon}</div><div class="info"><b>${tag}${sk.name}</b><div>Unlocks at level ${sk.unlock}</div></div></div>`;
+      const ok = avail.has(sk.id) && rank;
+      const tag = sk.cls ? '<span class="cls-tag">CLASS</span> ' : sk.tree ? '<span class="cls-tag tree">TREE</span> ' : sk.kind === 'aura' ? '<span class="cls-tag aura">AURA</span> ' : '';
+      const tagIcons = (sk.tags || []).map((t) => TAG_INFO[t].icon).join('');
+      if (!ok) return `<div class="node locked"><div class="ic">${sk.icon}</div><div class="info"><b>${tag}${sk.name} <span class="tagicons">${tagIcons}</span></b><div>${sk.tree ? 'Allocate its node on the passive tree' : `Unlocks at level ${sk.unlock}`}</div>${synergyLines(sk).map((l) => `<div class="syn">${l}</div>`).join('')}</div></div>`;
       const c = skillUpgradeCost(rank, state.level);
-      const inBar = h.skills.bar.slice(0, slots).includes(sk.id);
+      const inBar = h.skills.bar.includes(sk.id);
       const picks = h.skills.mods[sk.id] || [];
       const pending = MILESTONES.some((m, i) => rank >= m && picks[i] == null);
       const pips = MILESTONES.map((m, i) => `<span class="pip ${picks[i] != null && rank >= m ? 'on' : rank >= m ? 'ready' : ''}"></span>`).join('');
+      const boost = boosts[sk.id] ? ` <span class="good">💎+${Math.round((boosts[sk.id] - 1) * 100)}%</span>` : '';
       return `<div class="node ${inBar ? 'inbar' : ''}" data-act="${skillPick != null ? 'assign' : 'skill-open'}" data-id="${sk.id}">
         <div class="ic">${sk.icon}</div>
-        <div class="info"><b>${tag}${sk.name} <span class="muted">R${rank}</span>${inBar ? ' <span class="good">●</span>' : ''} <span class="pips">${pips}</span>${pending ? ' <span class="newmod">NEW</span>' : ''}</b><div>${skillDescFull(sk, rank, picks)}</div></div>
+        <div class="info"><b>${tag}${sk.name} <span class="muted">R${rank}</span> <span class="tagicons">${tagIcons}</span>${inBar ? ' <span class="good">●</span>' : ''} <span class="pips">${pips}</span>${pending ? ' <span class="newmod">NEW</span>' : ''}${boost}</b>
+          <div>${skillDescFull(sk, rank, picks)}</div>${synergyLines(sk).map((l) => `<div class="syn">${l}</div>`).join('')}</div>
         ${skillPick == null ? `<button class="btn small primary" data-act="skill-up" data-id="${sk.id}" ${rank < MAX_SKILL_RANK && costOk(c) ? '' : 'disabled'}>⬆️<small style="display:block;font-size:9px">${rank < MAX_SKILL_RANK ? `💠${fmt(c.shards)}` : 'MAX'}</small></button>` : ''}
       </div>`;
     }).join('')}`;
@@ -346,7 +386,7 @@ function openSkill(id) {
   const mods = skillMods(sk);
   $('#modal-card').innerHTML = `
     <div class="item-head"><div class="nm">${sk.icon} ${sk.name}</div><div class="meta">${heroName(HI())} · Rank ${rank}/${MAX_SKILL_RANK} · each rank +10% effect, −2% cooldown</div></div>
-    <div class="lines"><div class="imp">${skillDescFull(sk, rank, picks)}</div></div>
+    <div class="lines"><div class="imp">${skillDescFull(sk, rank, picks)}</div>${synergyLines(sk).map((l) => `<div class="syn" style="text-align:center">${l}</div>`).join('')}</div>
     <button class="btn primary" style="width:100%" data-act="skill-up" data-id="${id}" ${rank < MAX_SKILL_RANK && costOk(c) ? '' : 'disabled'}>
       ⬆️ Rank up${rank < MAX_SKILL_RANK ? ` · ${costText(c)}` : ' (max)'}</button>
     <h2 style="margin-top:14px">Upgrades</h2>
@@ -484,6 +524,14 @@ function closeModal() {
 }
 function reopen() { if (modalCtx && modalCtx.item) openItem(modalCtx.item, modalCtx.where, modalCtx.hero, modalCtx.slot); }
 
+function openStonePicker(sock) {
+  $('#modal-card').innerHTML = `<h2>💎 Choose a stone</h2>
+    <p class="muted" style="font-size:12px;margin-top:0">A stone already in another socket will move here.</p>
+    <div class="stone-list">${state.stones.slice().sort((a, b) => b.power - a.power).map((st) => stoneChip(st, `data-act="socket-set" data-uid="${st.uid}"`)).join('') || '<span class="muted">No stones yet.</span>'}</div>
+    <button class="btn full" style="width:100%;margin-top:10px" data-act="close">Cancel</button>`;
+  modalCtx = { sock };
+  $('#modal').classList.remove('hidden');
+}
 function openSalvageMenu() {
   const counts = RARITIES.map((r) => state.bag.filter((b) => !b.locked && !b.set && !b.mythic && b.rarity === r.id).length);
   $('#modal-card').innerHTML = `<h2>Salvage</h2><p class="muted" style="font-size:12px">Turns unlocked items into 💠 shards and gold. Locked items, set pieces and Mythics are kept.</p>
@@ -723,11 +771,23 @@ function doAction(el) {
     }
     case 'pick-slot': skillPick = +el.dataset.i; break;
     case 'pick-cancel': skillPick = null; break;
+    case 'slot-clear': H().skills.bar[skillPick] = null; skillPick = null; break;
+    case 'skill-tag': skillTag = el.dataset.t; break;
+    case 'socket-pick': openStonePicker(getSelected()); return;
+    case 'socket-set': {
+      const uid = el.dataset.uid, sock = m && m.sock;
+      if (!sock) return;
+      for (const hh of state.heroes) for (const [k, u] of Object.entries(hh.sockets || {})) if (u === uid) delete hh.sockets[k];
+      H().sockets[sock] = uid; modalCtx = null; $('#modal').classList.add('hidden');
+      toast('💎 Stone socketed'); break;
+    }
+    case 'socket-clear': delete H().sockets[getSelected()]; break;
+    case 'stones-best': { const n = bestStones(state); toast(n ? `💎 Socketed ${n} stone${n > 1 ? 's' : ''}` : 'No sockets with skills in reach yet'); break; }
     case 'assign': {
       const id = el.dataset.id, bar = H().skills.bar;
       const prev = bar.indexOf(id);
       if (prev >= 0) bar[prev] = bar[skillPick] || null;
-      bar[skillPick] = id; skillPick = null; break;
+      bar[skillPick] = id; while (bar.length < SKILL_SLOTS) bar.push(null); skillPick = null; break;
     }
     case 'skill-up': {
       const h = H(), id = el.dataset.id, rank = h.skills.ranks[id], c = skillUpgradeCost(rank, state.level);
@@ -892,6 +952,7 @@ function frame(now) {
       case 'skillUnlock': toast(`✴️ ${heroName(e.hero)} learned ${e.sk.icon} ${e.sk.name}`); break;
       case 'key': toast(`🗝️ Vault Key${e.first ? ' (first kill)' : ''}`); break;
       case 'egg': toast('🥚 Pet Egg found!'); break;
+      case 'stone': toast(`💎 ${e.stone.name} (T${e.stone.tier}, +${e.stone.power}%)`); break;
       case 'phase': toast(`🔱 Phase ${e.phase}!`); break;
       case 'room': toast(e.room > DUNGEON.rooms ? '💀 The Warden awakens' : `🚪 Room ${e.room}`); break;
       case 'heroDown': toast(`💀 ${heroName(e.i)} is down!`); break;

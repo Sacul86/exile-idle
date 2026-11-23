@@ -252,6 +252,8 @@ export class Arena {
       case 'heroDown': this.burst(px, py, '#c8352f', 22, 140, 3.5, 0.8, 250); this.num(px, py - 40, 'Down!', '#ff6b5e', 15); break;
       case 'revive': this.ring(px, py, '#6fe07a', 10, 60, 0.5, 4); break;
       case 'phoenix': this.ring(px, py, '#ff8a2b', 10, 90, 0.6, 6); this.burst(px, py, '#ffb04a', 30, 160, 3, 0.9, -80); this.num(px, py - 50, 'Phoenix!', '#ffb04a', 16); break;
+      case 'dot': this.num(mx + 20, my - 40, fmtN(e.dmg), '#c8ff7a', 12); break;
+      case 'stone': this.ring(mx, my, '#9ad8ff', 10, 80, 0.6, 4); break;
       case 'petHit': {
         this.pet.lunge = 0.2;
         const ppx = this.w * 0.5, ppy = this.gy - this.h * 0.1;
@@ -492,6 +494,17 @@ export class Arena {
     x.translate(mxp, gy); x.scale(sc, sc);
     this.drawArt(monsterArt(m.art), m.icon, 0, Math.sin(this.t * 2.2) * 2, ms, this.m.hit > 0 ? 0.75 : 0);
     x.restore();
+    // status icons above the monster
+    if (m.st) {
+      const icons = { burn: '🔥', bleed: '🩸', poison: '☠️', chill: '🧊', shock: '⚡', ruin: '💀', weaken: '🥀' };
+      const list = Object.keys(m.st).filter((k) => icons[k]);
+      x.font = '13px serif'; x.textAlign = 'center';
+      list.forEach((k, n) => {
+        const ix = mx - (list.length - 1) * 9 + n * 18, iy = gy - ms - 2;
+        x.fillText(icons[k], ix, iy);
+        if (k === 'poison') { x.font = '700 9px system-ui'; x.fillStyle = '#7ad04a'; x.fillText(m.st.poison.stacks, ix + 8, iy + 4); x.font = '13px serif'; }
+      });
+    }
     if (m.frozen > 0 && m.stunned) {
       for (let i = 0; i < 3; i++) { const a = this.t * 4 + i * 2.1; x.font = '14px serif'; x.textAlign = 'center'; x.fillText('⭐', mxp + Math.cos(a) * 26, gy - ms + 6 + Math.sin(a) * 6); }
     } else if (m.frozen > 0) {

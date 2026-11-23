@@ -5,7 +5,8 @@ import { upgradeCost, canUpgrade } from './items.js';
 import { petUpgradeCost, PET_MAX_LEVEL } from './pets.js';
 import { ASCENDANCY, ASC_LEVELS } from './classdata.js';
 import { PETS, PET_BY_ID } from './pets.js';
-import { charOf, refreshStats, autoAllocate, partyReady, hatchEgg, openBox } from './game.js';
+import { charOf, refreshStats, autoAllocate, partyReady, hatchEgg, openBox, syncSkills, availableSkills } from './game.js';
+import { NODES, socketsInReach } from './tree.js';
 
 const powerOf = (state, i, gear) => computeStats(charOf(state, i), gear).power;
 
@@ -36,69 +37,162 @@ export function equipBest(state, heroes = [0, 1, 2]) {
   return moves;
 }
 
-// ---- Skills: score each unlocked skill for the hero's role ----
-function skillScore(state, i, sk) {
+// ---- Skills: score each available skill for the hero's role, with party synergies ----
+// ctx: { statuses: Set of statuses the party applies, auras: Set of aura ids already taken }
+function skillScore(state, i, sk, ctx) {
   const h = state.heroes[i];
   const st = state.combat.heroes[i].stats;
   const ef = skillEffective(sk, h.skills.ranks[sk.id] || 1, h.skills.mods[sk.id]);
-  const cd = Math.max(0.5, ef.cooldown * (1 - st.cdr / 100));
-  const p = ef.power * (1 + st.skillPow / 100);
+  const boost = (state.combat.heroes[i].boost || {})[sk.id] || 1;
+  const cd = Math.max(0.5, (ef.cooldown || 1) * (1 - st.cdr / 100));
+  const p = ef.power * (1 + st.skillPow / 100) * boost;
   const hit = (st.physMin + st.physMax + st.eleMin + st.eleMax) / 2 || 1;
   const eleShare = (st.eleMin + st.eleMax) / 2 / hit;
   const eleF = sk.ele ? 1 + eleShare * 0.5 : 1;
   const role = st.role;
-  const W = role === 'dps' ? { off: 1, def: 0.15, heal: 0.1 } : role === 'tank' ? { off: 0.35, def: 1, heal: 0.3 } : { off: 0.25, def: 0.5, heal: 1.6 };
+  const W = role === 'dps' ? { off: 1, def: 0.15, heal: 0.1 } : role === 'tank' ? { off: 0.4, def: 1, heal: 0.3 } : { off: 0.3, def: 0.5, heal: 1.6 };
+  const PARTY = 2.5; // party-wide effects count for roughly the whole party's damage
+  const perAttack = 1 / Math.max(0.2, st.aps);
   let off = 0, def = 0, heal = 0;
-  const perAttack = 1 / Math.max(0.2, st.aps);        // express value relative to basic attacks
-  if (sk.kind === 'hit') off = (p * ef.hits * ef.casts * eleF / cd) * perAttack + (ef.expose ? ef.expose * ef.exposeDur / cd : 0);
-  if (sk.kind === 'freeze') { off = (p * ef.casts / cd) * perAttack; def = ef.duration / cd * 1.2; }
+  const uptime = (d) => Math.min(1, d / cd);
+  if (sk.kind === 'hit' || sk.kind === 'freeze') {
+    let mult = 1;
+    for (const [k, v] of Object.entries(sk.vs || {})) if (ctx.statuses.has(k) || (k === 'chill' && ctx.statuses.has('freeze'))) mult += v * 0.85;
+    if (sk.perPoison && ctx.statuses.has('poison')) mult += 1.5;
+    if (sk.lowHp) mult += sk.lowHp * 0.25;
+    if (sk.consume && ctx.statuses.has(sk.consume)) mult += 0.8;
+    off += (p * ef.hits * ef.casts * eleF * mult / cd) * perAttack;
+    if (ef.expose) off += ef.expose * uptime(ef.exposeDur) * PARTY;
+    if (sk.kind === 'freeze') def += uptime(ef.duration) * 1.4;
+    if (sk.partyHeal) heal += sk.partyHeal / cd * 6;
+  }
+  // statuses this skill applies
+  const ap = sk.applies || {};
+  const hits = (ef.hits || 1) * (ef.casts || 1);
+  if (ap.burn) off += ap.burn * 4 * ef.rankMult * Math.min(1, 4 / cd) * perAttack * 1.2;
+  if (ap.bleed) off += ap.bleed * 5 * ef.rankMult * Math.min(1, 5 / cd) * perAttack * 1.2;
+  if (ap.poison) off += ap.poison * hits * 0.06 * 5 * Math.min(1, 5 / cd) * perAttack * 1.2;
+  const dDur = sk.kind === 'debuff' ? ef.duration : 4;
+  if (ap.shock && !ctx.statuses.has('shock')) off += ap.shock * uptime(4) * PARTY;
+  if (ap.ruin && !ctx.statuses.has('ruin')) off += ap.ruin * ef.rankMult * uptime(dDur) * PARTY;
+  if (ap.weaken && !ctx.statuses.has('weaken')) def += ap.weaken * uptime(dDur) * PARTY * 1.5;
+  if (ap.chill && !ctx.statuses.has('chill')) def += 0.3 * Math.min(1, ap.chill / cd) * PARTY;
+  if (sk.selfBuff) def += (sk.selfBuff.dr || 0) * uptime(ef.duration) * 1.5;
   if (sk.kind === 'buff') {
     const b = sk.buffs || { [sk.stat]: 1 };
-    const scale = sk.buffs ? p : 1;
-    const dur = ef.duration / cd;
+    const scale = sk.party ? PARTY : 1;
     for (const [k, v] of Object.entries(b)) {
-      const val = (sk.buffs ? v * scale : p) * dur;
+      const val = (sk.buffs ? v * p : p) * uptime(ef.duration) * scale;
       if (k === 'dmg' || k === 'aps') off += val;
       if (k === 'dr' || k === 'evade') def += val * 1.5;
       if (k === 'leech') def += val * 0.05;
     }
   }
-  if (sk.kind === 'shield') def = p * ef.duration / cd * (sk.party ? 2.5 : 1);
-  if (sk.kind === 'heal') heal = p / cd * (sk.party ? 3 : 1) * 4;
+  if (sk.kind === 'aura') {
+    if (ctx.auras.has(sk.id)) return -1; // another hero already provides it
+    const a = sk.aura, f = ef.power * boost;
+    off += ((a.moreDmg || 0) / 100 + (a.incEle || 0) / 100 * 0.4 + (a.aps || 0) / 100 + (a.critChance || 0) / 100 * 0.15 + (a.critMulti || 0) / 100 * 0.2) * f * PARTY;
+    def += ((a.incArmour || 0) / 100 * 0.3 + (a.incLife || 0) / 100 + (a.regenPct || 0) * 0.15) * f * PARTY;
+  }
+  if (sk.kind === 'shield') def += p * uptime(ef.duration) * (sk.party ? PARTY : 1);
+  if (sk.kind === 'heal') heal += p / cd * (sk.party ? 3 : 1) * 4 + (sk.regen ? sk.regen * ef.duration / cd * 3 : 0);
   if (ef.heal) heal += ef.heal / cd * 3;
-  return W.off * off + W.def * def + W.heal * heal + (sk.cls ? 0.02 : 0);
+  return W.off * off + W.def * def + W.heal * heal + (sk.cls || sk.tree ? 0.02 : 0);
+}
+
+function statusesOf(sk) {
+  const out = Object.keys(sk.applies || {});
+  if (sk.kind === 'freeze') out.push('freeze');
+  return out;
 }
 
 export function bestSkills(state, heroes = [0, 1, 2]) {
   let changed = 0;
+  syncSkills(state);
+  // pending upgrade choices first
   for (const i of heroes) {
     const h = state.heroes[i];
     if (!h.cls) continue;
-    const slots = skillSlots(state.level);
-    const owned = skillsFor(h.cls).filter((sk) => h.skills.ranks[sk.id]);
-    // pick any pending upgrade choices first (higher-scoring option wins)
-    for (const sk of owned) {
+    for (const sk of availableSkills(state, i)) {
       const rank = h.skills.ranks[sk.id];
+      if (!rank) continue;
       const picks = h.skills.mods[sk.id] || (h.skills.mods[sk.id] = []);
       MILESTONES.forEach((m, k) => {
         if (rank < m || picks[k] != null) return;
-        let bestO = 0, bestV = -1;
+        let bestO = 0, bestV = -Infinity;
         skillMods(sk)[k].forEach((_, o) => {
           picks[k] = o;
-          const v = skillScore(state, i, sk);
+          const v = skillScore(state, i, sk, { statuses: new Set(), auras: new Set() });
           if (v > bestV) { bestV = v; bestO = o; }
         });
         picks[k] = bestO; changed++;
       });
     }
-    const ranked = owned.map((sk) => ({ id: sk.id, v: skillScore(state, i, sk) })).sort((a, b) => b.v - a.v);
-    const bar = ranked.slice(0, slots).map((r) => r.id);
-    const before = h.skills.bar.slice(0, slots).join();
-    h.skills.bar = bar;
-    if (bar.join() !== before) changed++;
+  }
+  // greedy, party-aware: fill slots one at a time, round-robin, so heroes build on each other's statuses
+  const slots = skillSlots();
+  const others = new Set(heroes.length < 3 ? [0, 1, 2].filter((x) => !heroes.includes(x)) : []);
+  const ctx = { statuses: new Set(), auras: new Set() };
+  for (const o of others) for (const id of state.heroes[o].skills.bar) { const sk = SKILL_BY_ID[id]; if (!sk) continue; statusesOf(sk).forEach((x) => ctx.statuses.add(x)); if (sk.kind === 'aura') ctx.auras.add(id); }
+  const picks = Object.fromEntries(heroes.map((i) => [i, []]));
+  const pool = Object.fromEntries(heroes.map((i) => [i, state.heroes[i].cls ? availableSkills(state, i).filter((sk) => state.heroes[i].skills.ranks[sk.id]) : []]));
+  for (let round = 0; round < slots; round++) {
+    for (const i of heroes) {
+      let best = null, bestV = 0;
+      for (const sk of pool[i]) {
+        if (picks[i].includes(sk.id)) continue;
+        const v = skillScore(state, i, sk, ctx);
+        if (v > bestV) { bestV = v; best = sk; }
+      }
+      if (!best) continue;
+      picks[i].push(best.id);
+      statusesOf(best).forEach((x) => ctx.statuses.add(x));
+      if (best.kind === 'aura') ctx.auras.add(best.id);
+    }
+  }
+  for (const i of heroes) {
+    const h = state.heroes[i];
+    if (!h.cls) continue;
+    const before = h.skills.bar.join();
+    h.skills.bar = picks[i];
+    if (picks[i].join() !== before) changed++;
   }
   if (changed) refreshStats(state);
   return changed;
+}
+
+// ---- Stones: put the strongest stones where they boost the most ----
+export function bestStones(state, heroes = [0, 1, 2]) {
+  // unsocket everything for these heroes, then greedily place
+  for (const i of heroes) state.heroes[i].sockets = {};
+  const used = new Set(state.heroes.flatMap((h) => Object.values(h.sockets || {})));
+  let placed = 0;
+  for (let pass = 0; pass < 20; pass++) {
+    let best = null;
+    for (const i of heroes) {
+      const h = state.heroes[i];
+      if (!h.cls) continue;
+      const tree = new Set(h.tree);
+      const bar = h.skills.bar.filter(Boolean).map((id) => SKILL_BY_ID[id]).filter(Boolean);
+      for (const sock of h.tree.filter((id) => NODES[id] && NODES[id].kind === 'socket' && !h.sockets[id])) {
+        const near = socketsInReach(sock).filter((n) => tree.has(n)).map((n) => SKILL_BY_ID[NODES[n].skill]);
+        for (const stone of state.stones) {
+          if (used.has(stone.uid)) continue;
+          const match = (sk) => stone.tag === 'any' || (sk.tags || []).includes(stone.tag);
+          let v = 0;
+          for (const sk of near) v += (bar.includes(sk) ? 1 : 0.2) * stone.power * (match(sk) ? 2 : 1);
+          for (const sk of bar) if (match(sk)) v += stone.power / 3;
+          if (v > 0 && (!best || v > best.v)) best = { v, i, sock, stone };
+        }
+      }
+    }
+    if (!best) break;
+    state.heroes[best.i].sockets[best.sock] = best.stone.uid;
+    used.add(best.stone.uid);
+    placed++;
+  }
+  refreshStats(state);
+  return placed;
 }
 
 // ---- Class passives: try both options at each unlocked level, keep the stronger ----
@@ -171,7 +265,7 @@ export function spendResources(state, heroes = [0, 1, 2], maxSteps = 400) {
       for (const id of bar) {
         const rank = h.skills.ranks[id];
         if (!rank || rank >= MAX_SKILL_RANK) continue;
-        const est = base * (0.045 / Math.max(1, bar.length)) * (MILESTONES.includes(rank + 1) ? 1.5 : 1);
+        const est = base * (0.09 / Math.max(1, bar.length)) * (MILESTONES.includes(rank + 1) ? 1.5 : 1);
         consider(est / total, skillUpgradeCost(rank, state.level), () => { h.skills.ranks[id]++; }, 'skills');
       }
     }
@@ -202,9 +296,12 @@ export function optimiseAll(state, heroes = [0, 1, 2], opts = { spend: true }) {
   r.pet = bestPet(state);
   r.asc = bestAscendancy(state, heroes);
   for (const i of heroes) r.tree += autoAllocate(state, i);
+  syncSkills(state);
   r.gear = equipBest(state, heroes);
-  if (opts.spend) r.spent = spendResources(state, heroes);
   r.skills = bestSkills(state, heroes);
+  r.stones = bestStones(state, heroes);
+  if (opts.spend) r.spent = spendResources(state, heroes);
+  bestSkills(state, heroes); // re-pick with the new ranks
   return r;
 }
 
@@ -220,6 +317,7 @@ export function describeResult(r) {
     s.pet && `pet +${s.pet} lv`,
     r.tree && `${r.tree} tree pts`,
     r.asc && `${r.asc} passives`,
+    r.stones && `${r.stones} stone${r.stones > 1 ? 's' : ''} socketed`,
     r.skills && 'skill bar set',
   ].filter(Boolean).join(' · ');
 }

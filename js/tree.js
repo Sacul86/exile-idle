@@ -119,6 +119,13 @@ const BRIDGE_NOTABLES = [
   ['Unbreakable', { incArmour: 20, incLife: 8 }],        // warrior-templar
   ['Divine Fury', { incEle: 12, resist: 6 }],            // templar-mage
 ];
+// Skills granted by tree nodes (left spur, right spur) per class sector
+export const TREE_SKILLS = {
+  witch: ['arcanecomet', 'manastorm'], shadow: ['deathblossom', 'shadowclone'], ranger: ['volley', 'focusaura'],
+  druid: ['wildbloom', 'thornwall'], duelist: ['bladestorm', 'parry'], marauder: ['earthshatter', 'bloodrage'],
+  templar: ['judgement', 'sanctuary'],
+};
+export const SOCKET_RADIUS = 150;
 // Extra keystones on the outer ring between sectors
 const OUTER_KEYSTONES = { 4: 'vaalPact', 0: 'glass' };
 
@@ -188,9 +195,17 @@ function buildTree() {
     link(s2, arc[2]);
     link(nearest(wheels[`${c.id}_0`], nodes[arc[1]]), arc[1]);
     link(nearest(wheels[`${c.id}_2`], nodes[arc[3]]), arc[3]);
-    // side spur notables
-    link(arc[0], notable(id('sp0'), B[0].notable2, c.id, pos(th - 25 * A, 405)));
-    link(arc[4], notable(id('sp2'), B[2].notable2, c.id, pos(th + 25 * A, 405)));
+    // side spur notables, each leading to a tree skill and a stone socket
+    const sp0 = notable(id('sp0'), B[0].notable2, c.id, pos(th - 25 * A, 405));
+    const sp2 = notable(id('sp2'), B[2].notable2, c.id, pos(th + 25 * A, 405));
+    link(arc[0], sp0); link(arc[4], sp2);
+    TREE_SKILLS[c.id].forEach((skId, k) => {
+      const side = k === 0 ? -1 : 1, from = k === 0 ? sp0 : sp2;
+      const sn = add(id(`skill${k}`), { kind: 'skill', skill: skId, stats: {}, cls: c.id, ...pos(th + side * 21 * A, 485) });
+      link(from, sn);
+      const so = add(id(`socket${k}`), { kind: 'socket', stats: {}, cls: c.id, ...pos(th + side * 12 * A, 455) });
+      link(from, so);
+    });
     // keystone cluster
     const na = small(id('ka'), B[1].small, c.id, pos(th - 7 * A, 398));
     const nb = small(id('kb'), B[1].small, c.id, pos(th + 7 * A, 398));
@@ -301,7 +316,13 @@ export function treeBonuses(state) {
   return { stats: out, keystones: ks };
 }
 
+// Tree skills a character has allocated
+export const treeSkillIds = (ch) => (ch.tree || []).map((id) => NODES[id]).filter((n) => n && n.kind === 'skill').map((n) => n.skill);
+export const socketsInReach = (socketId) => Object.values(NODES).filter((n) => n.kind === 'skill' && Math.hypot(n.x - NODES[socketId].x, n.y - NODES[socketId].y) <= SOCKET_RADIUS).map((n) => n.id);
+
 export function nodeLines(n, own = false) {
+  if (n.kind === 'skill') return ['Grants a skill when allocated'];
+  if (n.kind === 'socket') return ['Socket a 💎 stone here', 'Boosts tree skills within its radius'];
   if (n.kind === 'keystone') return KEYSTONES[n.keystone].lines;
   if (n.kind === 'start' && own) return [CLASS_BY_ID[n.cls].desc, ...Object.entries(CLASS_BY_ID[n.cls].bonus).map(([k, v]) => STAT_TEXT[k](v))];
   return Object.entries(n.stats).map(([k, v]) => STAT_TEXT[k](v));
