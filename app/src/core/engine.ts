@@ -426,6 +426,24 @@ export function smith(s: GameState, rt: Runtime | null, t: number, slot: Slot, h
   gainItem(s, rt, it);
   return it;
 }
+// forge up to n items; returns a summary (auto-equip / auto-sell still apply)
+export function smithMany(s: GameState, rt: Runtime | null, t: number, slot: Slot, hero: HeroId | undefined, n: number) {
+  const r = { made: 0, equipped: 0, sold: 0, kept: 0, best: null as Item | null, levels: 0 };
+  const ids0 = new Set(s.inventory.map((i) => i.id));
+  const lv0 = s.skillLv.smithing;
+  for (let i = 0; i < n && canCraft(s, 'smith', t); i++) {
+    pay(s, smithCost(t));
+    addXp(s, n > 1 ? null : rt, 'smithing', 25 * Math.pow(t + 1, 1.6));
+    rollPet(s, rt, 'smithing');
+    const it = makeItem(s, Math.max(5, s.maxStage) + t * 4, { slot, hero, tier: t, minRarity: 1, rarityBoost: s.skillLv.smithing / 60, crafted: true });
+    const res = gainItem(s, null, it);
+    r.made++; if (res === 'equipped') r.equipped++; else if (res === 'salvaged') r.sold++;
+    if (!r.best || it.rarity > r.best.rarity || (it.rarity === r.best.rarity && it.stat > r.best.stat)) r.best = it;
+  }
+  r.levels = s.skillLv.smithing - lv0;
+  r.kept = s.inventory.filter((i) => !ids0.has(i.id)).length;
+  return r;
+}
 export function cook(s: GameState, rt: Runtime | null, t: number, n = 1) {
   let made = 0;
   for (let i = 0; i < n && canCraft(s, 'cook', t); i++) { pay(s, cookCost(t)); const dbl = Math.random() < bonus(s, 'double'); s.mats['food' + t] += dbl ? 2 : 1; made++; addXp(s, rt, 'cooking', 12 * Math.pow(t + 1, 1.6)); rollPet(s, rt, 'cooking'); }

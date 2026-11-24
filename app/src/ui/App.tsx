@@ -74,7 +74,7 @@ export function App() {
           </button>
         ))}
       </nav>
-      <div class="toasts">{store.toasts.map((t) => <div key={t.id} class={`toast ${t.kind}`} dangerouslySetInnerHTML={{ __html: t.html }} />)}</div>
+      <div class="toasts">{store.toasts.map((t) => <div key={t.id} class={`toast t-${t.kind}`} dangerouslySetInnerHTML={{ __html: t.html }} />)}</div>
       {modal && <Modal m={modal} close={() => setModal(null)} open={setModal} />}
       {!s.started && <Title />}
     </div>
@@ -239,6 +239,15 @@ function Craft() {
   const [sub, setSub] = useState<'smith' | 'cook' | 'brew'>('smith');
   const [slot, setSlot] = useState<string>('weapon:' + (Object.keys(s.heroes)[0] || 'knight'));
   const ids = Object.keys(s.heroes) as HeroId[];
+  const forge = (t: number, n: number) => {
+    const [sl, h] = slot.split(':');
+    const r = act((st) => E.smithMany(st, store.rt, t, sl as Slot, (h || undefined) as HeroId, n));
+    if (!r.made) return;
+    const b = r.best!;
+    sfx(b.rarity >= 3 ? 'rare' : 'loot');
+    const best = `<b style="color:${RARITIES[b.rarity].color}">${RARITIES[b.rarity].name} ${E.itemName(b)}</b> (${E.itemStatText(b)})`;
+    toast(r.made === 1 ? `⚒ Forged ${best}` : `⚒ Forged ${r.made}: ${r.equipped} equipped, ${r.made - r.equipped - r.kept} sold, ${r.kept} kept in bag. Best: ${best}${r.levels ? `<br>⬆ Smithing +${r.levels} → level <b>${store.s.skillLv.smithing}</b>` : ''}`, b.rarity >= 3 ? 'gold' : '');
+  };
   return (
     <div>
       <div class="seg wide">{([['smith', 'Smithing', 'sk_smithing'], ['cook', 'Cooking', 'sk_cooking'], ['brew', 'Alchemy', 'sk_alchemy']] as const).map(([k, n, ic]) => <button class={sub === k ? 'on' : ''} onClick={() => setSub(k)}><Spr k={ic} s={0.7} /> {n}</button>)}</div>
@@ -250,7 +259,8 @@ function Craft() {
         {TIER_NAMES.map((tn, t) => { const ok = E.canCraft(s, 'smith', t); const lock = s.skillLv.smithing < E.craftLevel(t); return (
           <div class={`card recipe ${lock ? 'dim' : ''}`}><Spr k={(slot.startsWith('weapon') ? HERO[slot.split(':')[1] as HeroId].weapon : slot.startsWith('armor') ? 'ar' : 'tr') + t} s={1.2} />
             <div class="grow"><b>{tn}</b> <span class="small muted">{lock ? `Smithing ${E.craftLevel(t)}` : ''}</span><div><Cost c={E.smithCost(t)} /></div></div>
-            <button class="btn primary" disabled={!ok} onClick={() => { const [sl, h] = slot.split(':'); const it = act((st) => E.smith(st, null, t, sl as Slot, (h || undefined) as HeroId)); if (it) { sfx(it.rarity >= 2 ? 'rare' : 'loot'); toast(`⚒ Forged <b style="color:${RARITIES[it.rarity].color}">${RARITIES[it.rarity].name} ${E.itemName(it)}</b> (${E.itemStatText(it)})`, it.rarity >= 3 ? 'gold' : ''); } }}>Forge</button></div>); })}
+            <div class="col gap"><button class="btn small primary" disabled={!ok} onClick={() => forge(t, 1)}>Forge</button>
+              <div class="row gap"><button class="btn small" disabled={!ok} onClick={() => forge(t, 10)}>x10</button><button class="btn small" disabled={!ok} onClick={() => forge(t, 1000)}>All</button></div></div></div>); })}
       </div>}
       {sub === 'cook' && <div>
         <XpBar sk="cooking" />
@@ -268,7 +278,7 @@ function Craft() {
         {POTIONS.map((p, t) => { const lock = s.skillLv.alchemy < p.level; return (
           <div class={`card recipe ${lock ? 'dim' : ''}`}><Spr k={p.icon} s={1.2} />
             <div class="grow"><b>{p.name}</b> <span class="small muted">{p.desc} for {p.mins}m · have {fmt(s.mats['pot' + t])}{lock ? ` · Alchemy ${p.level}` : ''}</span><div><Cost c={E.brewCost(t)} /></div></div>
-            <div class="col gap"><button class="btn small" disabled={!E.canCraft(s, 'brew', t)} onClick={() => { act((st) => E.brew(st, null, t, 1)); sfx('loot'); }}>Brew</button>
+            <div class="col gap"><div class="row gap"><button class="btn small" disabled={!E.canCraft(s, 'brew', t)} onClick={() => { act((st) => E.brew(st, null, t, 1)); sfx('loot'); }}>Brew</button><button class="btn small" disabled={!E.canCraft(s, 'brew', t)} onClick={() => { const n = act((st) => E.brew(st, null, t, 999)); toast(`🧪 Brewed ${n} ${p.name}`); sfx('loot'); }}>All</button></div>
               <button class="btn small primary" disabled={s.mats['pot' + t] <= 0} onClick={() => { if (act((st) => E.drink(st, t))) { sfx('frenzy'); toast(`🧪 ${p.desc}!`, 'good'); } }}>Drink</button></div></div>); })}
       </div>}
       <h2>Materials</h2>
