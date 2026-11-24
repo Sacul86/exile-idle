@@ -162,13 +162,14 @@ function Party({ open }: { open: (m: any) => void }) {
 }
 
 // ---------------- gear ----------------
-function ItemIcon({ it, s = 1.4, onClick }: { it: E.Item; s?: number; onClick?: () => void }) {
-  return <button class={`item r${it.rarity}`} onClick={onClick}><Spr k={E.itemIcon(it)} s={s} />{it.isNew ? <i class="new" /> : null}{it.locked ? <i class="lock">🔒</i> : null}</button>;
+function ItemIcon({ it, s = 1.4, onClick, up }: { it: E.Item; s?: number; onClick?: () => void; up?: boolean }) {
+  return <button class={`item r${it.rarity}`} onClick={onClick}><Spr k={E.itemIcon(it)} s={s} />{it.isNew ? <i class="new" /> : null}{up ? <i class="up">▲</i> : null}{it.locked ? <i class="lock">🔒</i> : null}</button>;
 }
 function Gear({ open }: { open: (m: any) => void }) {
   const s = useStore();
   const ids = Object.keys(s.heroes) as HeroId[];
   const inv = [...s.inventory].sort((a, b) => b.rarity - a.rarity || b.stat - a.stat);
+  const junk = s.inventory.filter((i) => !i.locked && !E.isUpgrade(s, i)).length;
   return (
     <div>
       <h2>Equipment</h2>
@@ -181,13 +182,16 @@ function Gear({ open }: { open: (m: any) => void }) {
         ))}
       </div>
       <div class="row between"><h2>Bag <span class="muted small">{s.inventory.length}/{E.BAG_CAP}</span></h2>
-        <div class="row gap"><button class="btn small" onClick={() => { const n = act((st) => E.equipBest(st)); toast(n ? `Equipped ${n} upgrade${n > 1 ? 's' : ''}` : 'Nothing better in the bag'); sfx('blip'); }}>Equip best</button>
-          <button class="btn small" onClick={() => { const r = act((st) => E.salvageBelow(st, 2)); toast(`Salvaged ${r.n} for ${fmt(r.g)} gold`); sfx('coin'); }}>Salvage below Rare</button></div></div>
-      <div class="bag">{inv.map((it) => <ItemIcon it={it} onClick={() => { act(() => { it.isNew = false; }); open({ kind: 'item', it }); }} />)}{inv.length === 0 && <p class="muted small" style={{ gridColumn: "1 / -1" }}>Monsters drop gear. Bosses always drop something.</p>}</div>
+        <button class="btn small" onClick={() => { const n = act((st) => E.equipBest(st)); toast(n ? `Equipped ${n} upgrade${n > 1 ? 's' : ''}` : 'Nothing better in the bag'); sfx('blip'); }}>Equip best</button></div>
+      {s.inventory.length > 0 && <div class="sell-row">
+        <button class="btn primary" onClick={() => { act((st) => E.equipBest(st)); const r = act((st) => E.salvageJunk(st)); toast(r.n ? `Sold ${r.n} item${r.n > 1 ? 's' : ''} for ${fmt(r.g)} gold` : 'Everything in the bag is an upgrade for someone'); sfx('coin'); }}>Sell non-upgrades{junk ? ` (${junk})` : ''}</button>
+        <button class="btn danger" onClick={() => { const n = s.inventory.filter((i) => !i.locked).length; if (n && confirm(`Sell all ${n} unlocked items in the bag?`)) { const r = act((st) => E.salvageAll(st)); toast(`Sold ${r.n} items for ${fmt(r.g)} gold`); sfx('coin'); } }}>Sell all</button>
+      </div>}
+      <div class="bag">{inv.map((it) => <ItemIcon it={it} up={E.isUpgrade(s, it)} onClick={() => { act(() => { it.isNew = false; }); open({ kind: 'item', it }); }} />)}{inv.length === 0 && <p class="muted small" style={{ gridColumn: "1 / -1" }}>Monsters drop gear. Bosses always drop something.</p>}</div>
       <div class="card col">
         <label class="row between"><span>Auto-equip upgrades</span><Toggle on={s.settings.autoEquip} set={(v) => act((st) => { st.settings.autoEquip = v; })} /></label>
-        <label class="row between"><span>Auto-salvage drops below</span>
-          <select value={s.settings.autoSalvage} onChange={(e: any) => act((st) => { st.settings.autoSalvage = +e.target.value; })}>{RARITIES.slice(0, 4).map((r, i) => <option value={i}>{i ? r.name : 'Nothing'}</option>)}</select></label>
+        <label class="row between"><span>Auto-sell drops</span>
+          <select value={s.settings.autoSalvage} onChange={(e: any) => act((st) => { st.settings.autoSalvage = +e.target.value; })}>{['Off', 'Commons', 'Uncommon & below', 'Rare & below', 'Epic & below'].map((t, i) => <option value={i}>{t}</option>)}<option value={9}>Anything not an upgrade</option></select></label>
       </div>
     </div>
   );
@@ -344,7 +348,7 @@ function Modal({ m, close, open }: { m: any; close: () => void; open: (m: any) =
         <button class="btn" onClick={() => { act((st) => E.equip(st, id, it)); sfx('loot'); close(); }}><Spr k={HERO[id].sprite} s={0.8} /> Equip on {HERO[id].name} <span class={d > 0 ? 'good' : 'bad'}>{cur ? `${d > 0 ? '+' : ''}${fmt(d)}` : 'empty slot'}</span></button>); })}</div>}
       <div class="row gap wrap">{worn ? <button class="btn" onClick={() => { act((st) => E.unequip(st, worn, it.slot)); close(); }}>Unequip</button> : null}
         <button class="btn" onClick={() => { act(() => { it.locked = !it.locked; }); }}>{it.locked ? 'Unlock' : 'Lock'}</button>
-        {!worn && <button class="btn danger" disabled={it.locked} onClick={() => { const g = act((st) => E.salvage(st, it)); toast(`Salvaged for ${fmt(g)} gold`); sfx('coin'); close(); }}>Salvage <Gold n={E.salvageValue(s, it)} /></button>}</div></>;
+        {!worn && <button class="btn danger" disabled={it.locked} onClick={() => { const g = act((st) => E.salvage(st, it)); toast(`Sold for ${fmt(g)} gold`); sfx('coin'); close(); }}>Sell <Gold n={E.salvageValue(s, it)} /></button>}</div></>;
   }
   if (m.kind === 'ascend') {
     body = <><h2>Ascend?</h2><p>You will gain <b>{fmt(E.soulGain(s))} Souls</b>. Stage, gold and hero levels reset{s.soul.headstart ? ` (you'll start at stage ${1 + 5 * s.soul.headstart})` : ''}. Heroes, gear, skills, materials, pets and achievements are kept.</p>

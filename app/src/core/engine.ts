@@ -275,29 +275,32 @@ export const itemName = (it: Item) => `${it.slot === 'weapon' ? WEAPON_NAMES[it.
 export const itemIcon = (it: Item) => (it.slot === 'weapon' ? HERO[it.hero!].weapon : it.slot === 'armor' ? 'ar' : 'tr') + it.tier;
 export const itemStatText = (it: Item) => it.slot === 'weapon' ? `+${fmt(it.stat)}% damage` : it.slot === 'armor' ? `+${fmt(it.stat)}% life` : it.kind === 'gold' ? `+${fmt(it.stat)}% gold` : it.kind === 'crit' ? `+${(it.stat / 5).toFixed(1)}% crit chance` : `+${fmt(it.stat)}% drop chance`;
 export const salvageValue = (s: GameState, it: Item) => Math.round(goldFor(Math.max(1, Math.min(it.ilvl, s.runMax))) * 3 * RARITIES[it.rarity].salvage);
+// comparable power score: trinket kinds are normalised so gold/crit/drop trinkets can be compared
+export const itemScore = (it: Item) => it.slot !== 'trinket' ? it.stat : it.stat / (it.kind === 'gold' ? 0.8 : it.kind === 'crit' ? 0.6 : 0.5);
 // how much better is this item for a hero (0 if not usable)
 export function upgradeFor(s: GameState, it: Item, id: HeroId) {
   if (it.slot === 'weapon' && it.hero !== id) return 0;
-  const cur = s.heroes[id]?.gear[it.slot];
-  if (!cur) return it.stat + 1;
-  if (it.slot === 'trinket' && cur.kind !== it.kind) return cur.kind === 'crit' || it.kind !== 'crit' ? 0 : 0;
-  return it.stat - cur.stat;
+  if (!s.heroes[id]) return 0;
+  const cur = s.heroes[id]!.gear[it.slot];
+  if (!cur) return itemScore(it) + 1;
+  return itemScore(it) - itemScore(cur);
 }
+// fighters get first pick; benched heroes only get gear no fighter wants
 export function bestHeroFor(s: GameState, it: Item): HeroId | null {
-  let best: HeroId | null = null, bv = 0;
-  for (const id of Object.keys(s.heroes) as HeroId[]) {
-    let v = upgradeFor(s, it, id);
-    if (s.heroes[id]!.job === 'fight') v *= 1.5;
-    if (v > bv) { bv = v; best = id; }
+  const ids = Object.keys(s.heroes) as HeroId[];
+  for (const group of [ids.filter((id) => s.heroes[id]!.job === 'fight'), ids.filter((id) => s.heroes[id]!.job !== 'fight')]) {
+    let best: HeroId | null = null, bv = 0;
+    for (const id of group) { const v = upgradeFor(s, it, id); if (v > bv) { bv = v; best = id; } }
+    if (best) return best;
   }
-  return best;
+  return null;
 }
 export function gainItem(s: GameState, rt: Runtime | null, it: Item) {
   if (it.rarity > s.stats.bestRarity) s.stats.bestRarity = it.rarity;
   let res = 'bag';
   const h = s.settings.autoEquip ? bestHeroFor(s, it) : null;
-  if (h) { equip(s, h, it); res = 'equipped'; }
-  else if (it.rarity < s.settings.autoSalvage) { s.gold += salvageValue(s, it); res = 'salvaged'; }
+  if (h) { equip(s, h, it); res = 'equipped'; equipBest(s); }
+  else if (it.rarity < s.settings.autoSalvage || (s.settings.autoSalvage >= 9 && !isUpgrade(s, it))) { s.gold += salvageValue(s, it); res = 'salvaged'; }
   else { s.inventory.unshift(it); trimBag(s); }
   if (rt) ev(rt, { t: 'drop', rarity: it.rarity, res, icon: itemIcon(it), name: itemName(it), hero: h });
   return res;
@@ -320,9 +323,33 @@ export function equip(s: GameState, id: HeroId, it: Item) {
 export function unequip(s: GameState, id: HeroId, slot: Slot) { const h = s.heroes[id]; const it = h?.gear[slot]; if (!it) return; delete h!.gear[slot]; s.inventory.unshift(it); }
 export function salvage(s: GameState, it: Item) { if (it.locked) return 0; s.inventory = s.inventory.filter((x) => x.id !== it.id); const g = salvageValue(s, it); s.gold += g; return g; }
 export function salvageBelow(s: GameState, rarity: number) { let g = 0, n = 0; for (const it of [...s.inventory]) if (it.rarity < rarity && !it.locked) { g += salvage(s, it); n++; } return { g, n }; }
+export const isUpgrade = (s: GameState, it: Item) => (Object.keys(s.heroes) as HeroId[]).some((id) => upgradeFor(s, it, id) > 0);
+export function salvageWhere(s: GameState, pred: (it: Item) => boolean) { let g = 0, n = 0; for (const it of [...s.inventory]) if (!it.locked && pred(it)) { g += salvage(s, it); n++; } return { g, n }; }
+export const salvageJunk = (s: GameState) => salvageWhere(s, (it) => !isUpgrade(s, it));
+export const salvageAll = (s: GameState) => salvageWhere(s, () => true);
 export function equipBest(s: GameState) {
+  // pool armour/trinkets from benched heroes so fighters can take them, then hand out best-first until stable
+  const cap = s.inventory.length;
+  for (const id of Object.keys(s.heroes) as HeroId[]) {
+    const h = s.heroes[id]!; if (h.job === 'fight') continue;
+    for (const sl of ['armor', 'trinket'] as Slot[]) { const it = h.gear[sl]; if (it) { delete h.gear[sl]; s.inventory.push(it); } }
+  }
+  const pooled = new Set(s.inventory.slice(cap).map((i) => i.id));
   let n = 0;
-  for (const it of [...s.inventory].sort((a, b) => b.stat - a.stat)) { const h = bestHeroFor(s, it); if (h) { equip(s, h, it); n++; } }
+  for (let pass = 0; pass < 12; pass++) {
+    let moved = false;
+    for (const it of [...s.inventory].sort((a, b) => itemScore(b) - itemScore(a))) {
+      const id = bestHeroFor(s, it); if (!id) continue;
+      s.inventory = s.inventory.filter((x) => x.id !== it.id);
+      const old = s.heroes[id]!.gear[it.slot]; s.heroes[id]!.gear[it.slot] = it; it.isNew = false;
+      if (old) s.inventory.push(old);
+      if (!pooled.has(it.id)) n++;
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  if (n) s.stats.equips += n;
+  trimBag(s);
   return n;
 }
 
@@ -341,12 +368,14 @@ export function recruit(s: GameState, id: HeroId) {
   if (s.heroes[id] || s.gold < recruitCost(id) || s.maxStage < HERO[id].recruitStage) return false;
   s.gold -= recruitCost(id);
   s.heroes[id] = newHero(fighters(s).length < MAX_FIGHTERS ? 'fight' : 'idle');
+  if (s.settings.autoEquip) equipBest(s);
   return true;
 }
 export function setJob(s: GameState, id: HeroId, job: Job, node = 0) {
   const h = s.heroes[id]; if (!h) return false;
   if (job === 'fight' && h.job !== 'fight' && fighters(s).length >= MAX_FIGHTERS) return false;
   h.job = job; h.node = node; h.prog = 0;
+  if (s.settings.autoEquip) equipBest(s);
   if (job === 'fight') { h.hp = heroMaxHp(s, id); h.dead = 0; }
   return true;
 }

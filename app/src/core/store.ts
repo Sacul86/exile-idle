@@ -1,5 +1,6 @@
 // Tiny global store: one game state + runtime, with change notifications for the UI.
 import { GameState, Runtime, newGame, newRuntime, load, save, offline, OfflineReport } from './engine';
+import { equipBest } from './engine';
 
 type Fn = () => void;
 const subs = new Set<Fn>();
@@ -22,6 +23,7 @@ export function toast(html: string, kind = '') {
 }
 export function persist() { if (store.s.started) save(store.s); }
 export function applyOffline() {
+  if (store.s.settings.autoEquip) equipBest(store.s);
   const away = (Date.now() - (store.s.lastSeen || Date.now())) / 1000;
   if (!store.s.started || away < 60) return;
   const rep = offline(store.s, away);
